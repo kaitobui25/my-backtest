@@ -121,11 +121,43 @@ def simulate_trades_with_entries(open_, high, low, close, long_entries, short_en
                 direction = 1
                 entry = open_[i]
                 entry_i = i
+                # Check TP/SL on the entry candle itself
+                sl_price = entry * (1.0 - sl)
+                tp_price = entry * (1.0 + tp)
+                hit_sl = low[i] <= sl_price
+                hit_tp = high[i] >= tp_price
+                if hit_sl or hit_tp:
+                    if hit_sl:
+                        exit_price = sl_price
+                    else:
+                        exit_price = tp_price
+                    trade_returns[count] = (exit_price / entry - 1.0) - 2.0 * fee_per_side
+                    entry_idx[count] = entry_i
+                    exit_idx[count] = i
+                    bars_held[count] = 0
+                    count += 1
+                    in_pos = False
             elif short_entries[i]:
                 in_pos = True
                 direction = -1
                 entry = open_[i]
                 entry_i = i
+                # Check TP/SL on the entry candle itself
+                sl_price = entry * (1.0 + sl)
+                tp_price = entry * (1.0 - tp)
+                hit_sl = high[i] >= sl_price
+                hit_tp = low[i] <= tp_price
+                if hit_sl or hit_tp:
+                    if hit_sl:
+                        exit_price = sl_price
+                    else:
+                        exit_price = tp_price
+                    trade_returns[count] = (entry / exit_price - 1.0) - 2.0 * fee_per_side
+                    entry_idx[count] = entry_i
+                    exit_idx[count] = i
+                    bars_held[count] = 0
+                    count += 1
+                    in_pos = False
 
     if in_pos:
         if direction == 1:
@@ -278,7 +310,7 @@ def evaluate_timeframe(timeframe: str) -> list[DenseCandidate]:
                 ):
                     continue
 
-                test_mask = is_test_exit[exits]
+                test_mask = is_test_exit[entries]
                 test_returns = returns[test_mask]
                 test_entries = entries[test_mask]
                 test_bars_held = bars_held[test_mask]
