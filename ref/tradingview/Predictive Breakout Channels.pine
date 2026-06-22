@@ -1,0 +1,494 @@
+//@version=6
+indicator("Predictive Breakout Channels | GainzAlgo", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
+
+// reg channels 
+int   pivot_left    = input.int(5,     "Pivot Lookback (Left Bars)",        group = "Anchored LinReg Channel", minval = 2)
+int   pivot_right   = input.int(5,     "Pivot Confirmation (Right Bars)",   group = "Anchored LinReg Channel", minval = 2)
+float reg_mult      = input.float(2.0, "Channel Width (Std Dev Mult)",      group = "Anchored LinReg Channel", step = 0.25, minval = 0.5)
+bool  show_channel  = input.bool(true, "Show Regression Channel",           group = "Anchored LinReg Channel")
+
+// ANOVA confirmation / prob 
+int   anova_len     = input.int(14,    "ANOVA Length",                      group = "ANOVA Confirmation")
+float z_thresh      = input.float(1.5, "ANOVA Z-Score Min (Confirmation)",  group = "ANOVA Confirmation", step = 0.25)
+
+// Prob matrix 
+int   prob_lookback = input.int(1000,  "Historical Lookback (Bars)",        group = "Probability Matrix", minval = 200)
+
+// Features 
+int   rsi_len       = input.int(14,    "RSI Length",                        group = "Feature Filters")
+int   trend_len     = input.int(14,    "Trend Correlation Length",          group = "Feature Filters")
+int   vol_len       = input.int(20,    "Volume SMA Length",                 group = "Feature Filters")
+
+// HTF Features
+bool  use_htf       = input.bool(true, "Include HTF Trend Filter",          group = "Higher Timeframe (HTF) Trend")
+string htf_tf       = input.timeframe("D", "Higher Timeframe",              group = "Higher Timeframe (HTF) Trend")
+int   ema_short_len = input.int(9,     "Short EMA",                         group = "Higher Timeframe (HTF) Trend")
+int   ema_mid_len   = input.int(21,    "Mid EMA",                           group = "Higher Timeframe (HTF) Trend")
+int   ema_long_len  = input.int(50,    "Long EMA",                          group = "Higher Timeframe (HTF) Trend")
+
+// Visuals 
+float mult_dist      = input.float(1.5, "Target Zone Step Size (ATR Mult)",  group = "Visual Projections", step = 0.1)
+int   proj_bars      = input.int(40,    "Projection Width (Bars)",           group = "Visual Projections", minval = 10, maxval = 100)
+bool  show_var_alert = input.bool(false, "Show High Variance Label (Z >= 2)", group = "Visual Projections")
+
+// def colours 
+color col_bull      = input.color(#3ad79b, "Bullish Color",                 group = "Theme")
+color col_bear      = input.color(#fb6b2e, "Bearish Color",                 group = "Theme")
+color col_ch_bull   = input.color(#3ad79b, "Channel Color (Rising)",        group = "Theme")
+color col_ch_bear   = input.color(#fb6b2e, "Channel Color (Falling)",       group = "Theme")
+// }}}
+
+
+float ph = ta.pivothigh(high, pivot_left, pivot_right)
+float pl = ta.pivotlow (low,  pivot_left, pivot_right)
+
+var int   anchor_bar   = 0        
+var float anchor_price = close    
+var bool  anchor_bull  = false    
+
+if not na(pl)
+    anchor_bar   := bar_index - pivot_right
+    anchor_price := low[pivot_right]
+    anchor_bull  := true
+
+if not na(ph)
+    anchor_bar   := bar_index - pivot_right
+    anchor_price := high[pivot_right]
+    anchor_bull  := false
+
+var float acc_n   = 0.0
+var float acc_sx  = 0.0
+var float acc_sx2 = 0.0
+var float acc_sy  = 0.0
+var float acc_sxy = 0.0
+var float acc_ss  = 0.0  
+
+bool new_anchor = (not na(ph)) or (not na(pl))
+
+if new_anchor
+    acc_n   := 1.0
+    acc_sx  := 0.0
+    acc_sx2 := 0.0
+    acc_sy  := anchor_price
+    acc_sxy := 0.0
+    acc_ss  := 0.0
+else
+    float x = bar_index - anchor_bar
+    float y = close
+    acc_n   := acc_n   + 1.0
+    acc_sx  := acc_sx  + x
+    acc_sx2 := acc_sx2 + x * x
+    acc_sy  := acc_sy  + y
+    acc_sxy := acc_sxy + x * y
+
+float denom     = acc_n * acc_sx2 - acc_sx * acc_sx
+float lr_slope  = denom != 0.0 ? (acc_n * acc_sxy - acc_sx * acc_sy) / denom : 0.0
+float lr_intcp  = acc_n > 0.0  ? (acc_sy - lr_slope * acc_sx) / acc_n        : close
+
+// Regression 
+float x_now     = float(bar_index - anchor_bar)
+float lr_mid    = lr_intcp + lr_slope * x_now
+
+float residual     = close - lr_mid
+float residual_std = ta.stdev(residual, math.max(int(acc_n), 2))
+
+float lr_upper = lr_mid + reg_mult * residual_std
+float lr_lower = lr_mid - reg_mult * residual_std
+
+bool ch_rising = lr_slope > 0
+
+bool broke_upper = ta.crossover (close, lr_upper)
+bool broke_lower = ta.crossunder(close, lr_lower)
+
+// Drawing reg channel 
+var line ch_upper_line = line.new(na, na, na, na, force_overlay = true)
+var line ch_mid_line   = line.new(na, na, na, na, force_overlay = true)
+var line ch_lower_line = line.new(na, na, na, na, force_overlay = true)
+
+color ch_col = ch_rising ? col_ch_bull : col_ch_bear
+
+if show_channel and barstate.islast == false or barstate.islast
+    float lr_upper_at_anchor = lr_intcp + lr_slope * 0.0 + reg_mult * residual_std
+    float lr_lower_at_anchor = lr_intcp + lr_slope * 0.0 - reg_mult * residual_std
+    float lr_mid_at_anchor   = lr_intcp
+
+    line.set_xy1(ch_upper_line, anchor_bar, lr_upper_at_anchor)
+    line.set_xy2(ch_upper_line, bar_index,  lr_upper)
+    line.set_color(ch_upper_line, color.new(ch_col, 40))
+    line.set_width(ch_upper_line, 2)
+    line.set_style(ch_upper_line, line.style_solid)
+
+    line.set_xy1(ch_mid_line, anchor_bar, lr_mid_at_anchor)
+    line.set_xy2(ch_mid_line, bar_index,  lr_mid)
+    line.set_color(ch_mid_line, color.new(ch_col, 60))
+    line.set_width(ch_mid_line, 1)
+    line.set_style(ch_mid_line, line.style_dashed)
+
+    line.set_xy1(ch_lower_line, anchor_bar, lr_lower_at_anchor)
+    line.set_xy2(ch_lower_line, bar_index,  lr_lower)
+    line.set_color(ch_lower_line, color.new(ch_col, 40))
+    line.set_width(ch_lower_line, 2)
+    line.set_style(ch_lower_line, line.style_solid)
+
+var linefill ch_fill = linefill.new(ch_upper_line, ch_lower_line, color.new(#a0a8c8, 93))
+linefill.set_color(ch_fill, color.new(ch_col, 91))
+// }}}
+
+f_anova(float g1, float g2, float g3, int len) =>
+    float g1_avg    = ta.sma(g1, len)
+    float g2_avg    = ta.sma(g2, len)
+    float g3_avg    = ta.sma(g3, len)
+    float total_avg = (g1_avg + g2_avg + g3_avg) / 3.0
+    float ss1       = ta.variance(g1, len) * (len - 1)
+    float ss2       = ta.variance(g2, len) * (len - 1)
+    float ss3       = ta.variance(g3, len) * (len - 1)
+    float ss_within = ss1 + ss2 + ss3
+    float mss       = ss_within / ((len * 3.0) - 6.0)
+    float bss1      = len * math.pow(g1_avg - total_avg, 2)
+    float bss2      = len * math.pow(g2_avg - total_avg, 2)
+    float bss3      = len * math.pow(g3_avg - total_avg, 2)
+    float m_sum     = (bss1 + bss2 + bss3) / 2.0
+    mss != 0 ? m_sum / mss : 0.0
+
+float raw_anova = f_anova(close[1], low[1], high[1], anova_len)
+float anova_z   = (raw_anova - ta.sma(raw_anova, anova_len)) / ta.stdev(raw_anova, anova_len)
+bool  anova_ok  = math.abs(anova_z) >= z_thresh
+
+if show_var_alert and ta.crossover(math.abs(anova_z), 2.0)
+    label.new(bar_index, high, text="High Variance\nAlert", color=color.new(color.purple, 30), textcolor=color.white, style=label.style_label_down, size=size.small)
+
+// Fetch HTF Data
+[ema_s, ema_m, ema_l] = request.security(syminfo.tickerid, htf_tf, [ta.ema(close, ema_short_len), ta.ema(close, ema_mid_len), ta.ema(close, ema_long_len)])
+
+// Features Calculation
+float rsi_val    = ta.rsi(close, rsi_len)
+float trend_corr = ta.correlation(close, bar_index, trend_len)
+float atr_val    = ta.atr(14)
+float vol_avg    = ta.sma(volume, vol_len)
+
+bool is_rsi_bull   = rsi_val > 50
+bool is_trend_bull = trend_corr > 0
+bool is_vol_valid  = volume > vol_avg
+bool htf_bull      = ema_s > ema_m and ema_m > ema_l
+bool htf_bear      = ema_s < ema_m and ema_m < ema_l
+
+// Toggle bypass logic for HTF
+bool active_htf_bull = use_htf ? htf_bull : true
+bool active_htf_bear = use_htf ? htf_bear : true
+
+bool is_channel_event = broke_upper or broke_lower
+bool structural_bull  = is_channel_event and is_rsi_bull  and is_trend_bull and is_vol_valid and active_htf_bull
+bool structural_bear  = is_channel_event and (not is_rsi_bull) and (not is_trend_bull) and is_vol_valid and active_htf_bear
+
+float window_events     = ta.sma(is_channel_event ? 1.0 : 0.0, prob_lookback) * prob_lookback
+float window_bull_count = ta.sma(structural_bull  ? 1.0 : 0.0, prob_lookback) * prob_lookback
+float window_bear_count = ta.sma(structural_bear  ? 1.0 : 0.0, prob_lookback) * prob_lookback
+
+float prob_bull = math.max(0.0, math.min(100.0, window_events > 0 ? (window_bull_count / window_events) * 100.0 : 0.0))
+float prob_bear = math.max(0.0, math.min(100.0, window_events > 0 ? (window_bear_count / window_events) * 100.0 : 0.0))
+
+bool bull_breakout = broke_upper and anova_ok and is_rsi_bull  and is_trend_bull and is_vol_valid and active_htf_bull
+bool bear_breakout = broke_lower and anova_ok and (not is_rsi_bull) and (not is_trend_bull) and is_vol_valid and active_htf_bear
+
+
+var box[]   boxes_up   = array.new<box>()
+var box[]   boxes_dn   = array.new<box>()
+var line[]  borders_up = array.new<line>()
+var line[]  borders_dn = array.new<line>()
+var label[] sig_labels = array.new<label>()
+
+int   N_ZONES   = 4
+int[] BOX_ALPHA = array.from(72, 80, 87, 93)
+int[] BRD_ALPHA = array.from(10, 20, 35, 50)
+
+purge_up() =>
+    for b in boxes_up
+        box.delete(b)
+    boxes_up.clear()
+    for l in borders_up
+        line.delete(l)
+    borders_up.clear()
+
+purge_dn() =>
+    for b in boxes_dn
+        box.delete(b)
+    boxes_dn.clear()
+    for l in borders_dn
+        line.delete(l)
+    borders_dn.clear()
+
+purge_labels() =>
+    for lbl in sig_labels
+        label.delete(lbl)
+    sig_labels.clear()
+
+float step = atr_val * mult_dist
+int   x2   = bar_index + proj_bars
+
+
+if bull_breakout
+    purge_dn()
+    purge_up()
+    purge_labels()
+
+    label.new(bar_index, low,
+         text          = " ▲ " + str.tostring(prob_bull, "#.#") + "% ",
+         color         = color.new(col_bull, 55),
+         textcolor     = color.white,
+         style         = label.style_label_up,
+         size          = size.small,
+         force_overlay = true)
+
+    for i = 0 to N_ZONES - 1
+        float y_bot = high + step * i
+        float y_top = high + step * (i + 1)
+
+        box bx = box.new(
+             left          = bar_index,
+             top           = y_top,
+             right         = x2,
+             bottom        = y_bot,
+             bgcolor       = color.new(col_bull, BOX_ALPHA.get(i)),
+             border_color  = color.new(col_bull, 95),
+             border_width  = 0,
+             force_overlay = true)
+        boxes_up.push(bx)
+
+        line brd = line.new(
+             x1            = bar_index,
+             y1            = y_top,
+             x2            = x2,
+             y2            = y_top,
+             color         = color.new(col_bull, BRD_ALPHA.get(i)),
+             width         = 1,
+             style         = line.style_solid,
+             force_overlay = true)
+        borders_up.push(brd)
+
+        if i > 0
+            label tlbl = label.new(
+                 x             = x2,
+                 y             = y_top,
+                 text          = "  T" + str.tostring(i),
+                 color         = color(na),
+                 textcolor     = color.new(col_bull, BRD_ALPHA.get(i) - 10),
+                 style         = label.style_label_left,
+                 size          = size.small,
+                 force_overlay = true)
+            sig_labels.push(tlbl)
+
+    line base = line.new(bar_index, high, x2, high,
+         color         = color.new(col_bull, 15),
+         width         = 2,
+         style         = line.style_solid,
+         force_overlay = true)
+    borders_up.push(base)
+
+
+if bear_breakout
+    purge_up()
+    purge_dn()
+    purge_labels()
+
+    label.new(bar_index, high,
+         text          = " ▼ " + str.tostring(prob_bear, "#.#") + "% ",
+         color         = color.new(col_bear, 55),
+         textcolor     = color.white,
+         style         = label.style_label_down,
+         size          = size.small,
+         force_overlay = true)
+
+    for i = 0 to N_ZONES - 1
+        float y_top = low - step * i
+        float y_bot = low - step * (i + 1)
+
+        box bx = box.new(
+             left          = bar_index,
+             top           = y_top,
+             right         = x2,
+             bottom        = y_bot,
+             bgcolor       = color.new(col_bear, BOX_ALPHA.get(i)),
+             border_color  = color.new(col_bear, 95),
+             border_width  = 0,
+             force_overlay = true)
+        boxes_dn.push(bx)
+
+        line brd = line.new(
+             x1            = bar_index,
+             y1            = y_bot,
+             x2            = x2,
+             y2            = y_bot,
+             color         = color.new(col_bear, BRD_ALPHA.get(i)),
+             width         = 1,
+             style         = line.style_solid,
+             force_overlay = true)
+        borders_dn.push(brd)
+
+        if i > 0
+            label tlbl = label.new(
+                 x             = x2,
+                 y             = y_bot,
+                 text          = "  T" + str.tostring(i),
+                 color         = color(na),
+                 textcolor     = color.new(col_bear, BRD_ALPHA.get(i) - 10),
+                 style         = label.style_label_left,
+                 size          = size.small,
+                 force_overlay = true)
+            sig_labels.push(tlbl)
+
+    line base = line.new(bar_index, low, x2, low,
+         color         = color.new(col_bear, 15),
+         width         = 2,
+         style         = line.style_solid,
+         force_overlay = true)
+    borders_dn.push(base)
+
+
+bool any_bull_breached = false
+bool any_bear_breached = false
+
+if boxes_up.size() > 0
+    for i = 0 to boxes_up.size() - 1
+        box bx = boxes_up.get(i)
+        if not na(bx)
+            box.set_right(bx, bar_index + 4)
+            if i < borders_up.size()
+                line brd = borders_up.get(i)
+                if not na(brd)
+                    line.set_x2(brd, bar_index + 4)
+            if close > box.get_top(bx) and i == N_ZONES - 1
+                any_bull_breached := true
+
+if any_bull_breached
+    purge_up()
+
+if boxes_dn.size() > 0
+    for i = 0 to boxes_dn.size() - 1
+        box bx = boxes_dn.get(i)
+        if not na(bx)
+            box.set_right(bx, bar_index + 4)
+            if i < borders_dn.size()
+                line brd = borders_dn.get(i)
+                if not na(brd)
+                    line.set_x2(brd, bar_index + 4)
+            if close < box.get_bottom(bx) and i == N_ZONES - 1
+                any_bear_breached := true
+
+if any_bear_breached
+    purge_dn()
+
+var table info_table = table.new(position.top_right, 3, 10,
+     bgcolor      = color.new(#0d0d0d, 10),
+     border_color = color.new(color.gray, 70),
+     border_width = 1,
+     frame_color  = color.new(color.gray, 50),
+     frame_width  = 1)
+
+if barstate.islast
+    table.cell(info_table, 0, 0, "  Feature",
+         text_color  = color.new(color.white, 20),
+         bgcolor     = color.new(#1a1a2e, 0),
+         text_size   = size.small,
+         text_halign = text.align_left)
+    table.cell(info_table, 1, 0, "Value",
+         text_color = color.new(color.white, 20),
+         bgcolor    = color.new(#1a1a2e, 0),
+         text_size  = size.small)
+    table.cell(info_table, 2, 0, "●",
+         text_color = color.new(color.white, 20),
+         bgcolor    = color.new(#1a1a2e, 0),
+         text_size  = size.small)
+
+    int   bars_since = bar_index - anchor_bar
+    string anchor_txt = str.tostring(bars_since) + " bars ago"
+    table.cell(info_table, 0, 1, "  Anchor",       text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    table.cell(info_table, 1, 1, anchor_txt,        text_color = color.new(color.silver, 20), text_size = size.small)
+    table.cell(info_table, 2, 1, "●",
+         text_color = anchor_bull ? col_bull : col_bear, text_size = size.small)
+
+    bool   lr_breach  = broke_upper or broke_lower
+    float  sigma_pos  = residual_std > 0 ? (close - lr_mid) / residual_std : 0.0
+    string lr_txt     = broke_upper ? "↑ Upper breach" : broke_lower ? "↓ Lower breach" : str.tostring(sigma_pos, "#.##") + " σ"
+    color  lr_dot     = broke_upper ? col_bull : broke_lower ? col_bear : color.new(color.gray, 40)
+    table.cell(info_table, 0, 2, "  Channel",      text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    table.cell(info_table, 1, 2, lr_txt,            text_color = lr_breach ? color.white : color.new(color.silver, 30), text_size = size.small)
+    table.cell(info_table, 2, 2, "●",               text_color = lr_dot, text_size = size.small)
+
+    table.cell(info_table, 0, 3, "  ANOVA Z",      text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    table.cell(info_table, 1, 3, str.tostring(anova_z, "#.##"),
+         text_color = anova_ok ? color.white : color.new(color.silver, 30), text_size = size.small)
+    table.cell(info_table, 2, 3, "●",
+         text_color = anova_ok ? color.lime : color.new(color.gray, 40), text_size = size.small)
+
+    table.cell(info_table, 0, 4, "  RSI",          text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    table.cell(info_table, 1, 4, str.tostring(rsi_val, "#.#"),
+         text_color = is_rsi_bull ? col_bull : col_bear, text_size = size.small)
+    table.cell(info_table, 2, 4, "●",
+         text_color = is_rsi_bull ? col_bull : col_bear, text_size = size.small)
+
+    table.cell(info_table, 0, 5, "  Trend Corr",   text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    table.cell(info_table, 1, 5, str.tostring(trend_corr, "#.###"),
+         text_color = is_trend_bull ? col_bull : col_bear, text_size = size.small)
+    table.cell(info_table, 2, 5, "●",
+         text_color = is_trend_bull ? col_bull : col_bear, text_size = size.small)
+
+    table.cell(info_table, 0, 6, "  Volume",       text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    table.cell(info_table, 1, 6, is_vol_valid ? "High" : "Low", text_color = is_vol_valid ? col_bull : color.new(color.silver, 30), text_size = size.small)
+    table.cell(info_table, 2, 6, "●",              text_color = is_vol_valid ? col_bull : color.new(color.gray, 40), text_size = size.small)
+
+    // HTF Trend Row - Updates based on bypass toggle
+    string htf_txt = not use_htf ? "Disabled" : htf_bull ? "Bull" : htf_bear ? "Bear" : "Neutral"
+    color  htf_col = not use_htf ? color.new(color.silver, 30) : htf_bull ? col_bull : htf_bear ? col_bear : color.gray
+    table.cell(info_table, 0, 7, "  HTF Trend",    text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    table.cell(info_table, 1, 7, htf_txt,          text_color = htf_col, text_size = size.small)
+    table.cell(info_table, 2, 7, "●",              text_color = htf_col, text_size = size.small)
+
+    table.cell(info_table, 0, 8, "  Bull Prob",
+         text_color  = col_bull,
+         bgcolor     = structural_bull ? color.new(col_bull, 88) : color(na),
+         text_size   = size.small,
+         text_halign = text.align_left)
+    table.cell(info_table, 1, 8, str.tostring(prob_bull, "#.#") + "%",
+         text_color = col_bull,
+         bgcolor    = structural_bull ? color.new(col_bull, 88) : color(na),
+         text_size  = size.small)
+    table.cell(info_table, 2, 8, "●",
+         text_color = structural_bull ? col_bull : color.new(col_bull, 60),
+         bgcolor    = structural_bull ? color.new(col_bull, 88) : color(na),
+         text_size  = size.small)
+
+    table.cell(info_table, 0, 9, "  Bear Prob",
+         text_color  = col_bear,
+         bgcolor     = structural_bear ? color.new(col_bear, 88) : color(na),
+         text_size   = size.small,
+         text_halign = text.align_left)
+    table.cell(info_table, 1, 9, str.tostring(prob_bear, "#.#") + "%",
+         text_color = col_bear,
+         bgcolor    = structural_bear ? color.new(col_bear, 88) : color(na),
+         text_size  = size.small)
+    table.cell(info_table, 2, 9, "●",
+         text_color = structural_bear ? col_bear : color.new(col_bear, 60),
+         bgcolor    = structural_bear ? color.new(col_bear, 88) : color(na),
+         text_size  = size.small)
+
+// Alert cons 
+bool alert_bull = bull_breakout
+bool alert_bear = bear_breakout
+
+alertcondition(alert_bull, 
+               title   = "GainzAlgo: Bullish Breakout", 
+               message = "Bullish Breakout Confirmed! Probability: {{plot_0}}% | ANOVA Z: {{plot_1}}")
+
+alertcondition(alert_bear, 
+               title   = "GainzAlgo: Bearish Breakout", 
+               message = "Bearish Breakout Confirmed! Probability: {{plot_0}}% | ANOVA Z: {{plot_1}}")
+
+alertcondition(ta.crossover(math.abs(anova_z), 2.0),
+               title   = "GainzAlgo: High Variance Alert",
+               message = "ANOVA Z-Score >= 2: Possible Breakout Forming")
+
+if alert_bull
+    alert("🚀 Bullish Breakout Confirmed! Est. Probability: " + str.tostring(prob_bull, "#.#") + "% | RSI: " + str.tostring(rsi_val, "#.#"), alert.freq_once_per_bar_close)
+
+if alert_bear
+    alert("💥 Bearish Breakout Confirmed! Est. Probability: " + str.tostring(prob_bear, "#.#") + "% | RSI: " + str.tostring(rsi_val, "#.#"), alert.freq_once_per_bar_close)

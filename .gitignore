@@ -1,0 +1,24 @@
+# Python cache
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Numba / compiled cache
+*.nbc
+*.nbi
+
+# Data cache folders anywhere
+cache/
+
+# Result folders anywhere
+result/
+
+# Logs
+*.log
+
+# Backtest outputs
+rejected_setups.csv
+backtest_v1/
+backtest_v6/
