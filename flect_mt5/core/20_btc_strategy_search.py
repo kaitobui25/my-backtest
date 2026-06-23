@@ -80,7 +80,9 @@ def load_ohlc(timeframe: str) -> pd.DataFrame:
     if not files:
         raise FileNotFoundError(f"No parquet for {timeframe} under {DATA_ROOT / folder}")
     df = pd.read_parquet(files[-1]).sort_index()
-    df.index = pd.to_datetime(df.index).tz_localize(None)
+    df.index = pd.to_datetime(df.index)
+    if df.index.tz is not None:
+        df.index = df.index.tz_convert(None)
     return df[["open", "high", "low", "close", "volume"]].dropna().astype(float)
 
 
