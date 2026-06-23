@@ -9,10 +9,20 @@ import pandas as pd
 from numba import njit
 
 
-ROOT = Path(__file__).resolve().parents[3]
-DATA_ROOT = ROOT / "my-data" / "flect_mt5" / "cache" / "btc"
-OUT_DIR = ROOT / "my-data" / "flect_mt5" / "result" / "btc_strategy_search"
+ROOT_3 = Path(__file__).resolve().parents[3]
+ROOT_2 = Path(__file__).resolve().parents[2]
+
+if (ROOT_3 / "my-data" / "flect_mt5" / "cache" / "btc").exists():
+    ROOT = ROOT_3
+    DATA_ROOT = ROOT / "my-data" / "flect_mt5" / "cache" / "btc"
+    OUT_DIR = ROOT / "my-data" / "flect_mt5" / "result" / "btc_strategy_search"
+else:
+    ROOT = ROOT_2
+    DATA_ROOT = ROOT / "flect_mt5" / "cache" / "btc"
+    OUT_DIR = ROOT / "flect_mt5" / "result" / "btc_strategy_search"
+
 OUT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 SYMBOL = "BTCUSD"
 TEST_START = pd.Timestamp("2025-01-01")
@@ -70,7 +80,7 @@ def load_ohlc(timeframe: str) -> pd.DataFrame:
     if not files:
         raise FileNotFoundError(f"No parquet for {timeframe} under {DATA_ROOT / folder}")
     df = pd.read_parquet(files[-1]).sort_index()
-    df.index = pd.to_datetime(df.index)
+    df.index = pd.to_datetime(df.index).tz_localize(None)
     return df[["open", "high", "low", "close", "volume"]].dropna().astype(float)
 
 
