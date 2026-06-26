@@ -23,11 +23,11 @@ TEST_START_NS = np.datetime64(search.TEST_START).astype("datetime64[ns]").astype
 OUT_DIR = search.OUT_DIR / "dense_high_winrate"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-TIMEFRAMES = ["M15", "M30", "H1"]
+26 | TIMEFRAMES = ["M15", "M30", "H1", "H2", "H4"]
 MIN_WIN_RATE = 75.0
 MIN_TEST_WIN_RATE = 75.0
-MIN_TRADES_PER_DAY = 0.5
-MIN_TEST_TRADES_PER_DAY = 0.5
+MIN_TRADES_PER_DAY = 0.33
+MIN_TEST_TRADES_PER_DAY = 0.33
 
 
 @dataclass(frozen=True)
