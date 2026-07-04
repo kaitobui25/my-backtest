@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC Backtest</title>
+<link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+<div id="app">
+  <div id="top-bar">
+    <div class="panel" id="panel-timeframes">
+      <div class="panel-title">Timeframes</div>
+      <div class="panel-body" id="timeframe-list"></div>
+    </div>
+    <div class="panel" id="panel-strategies">
+      <div class="panel-title">Strategies</div>
+      <div class="panel-body" id="strategy-list"></div>
+    </div>
+    <div class="panel" id="panel-selected">
+      <div class="panel-title">Selected Setup</div>
+      <div class="panel-body">
+        <div class="selected-group">
+          <div class="selected-label">Timeframes</div>
+          <div id="selected-timeframes" class="selected-items"></div>
+        </div>
+        <div class="selected-group">
+          <div class="selected-label">Strategies</div>
+          <div id="selected-strategies" class="selected-items"></div>
+        </div>
+        <button class="btn-clear" id="btn-clear-selected">Clear All</button>
+      </div>
+    </div>
+    <div class="panel" id="panel-filters">
+      <div class="panel-title">Filters</div>
+      <div class="panel-body" id="filter-list"></div>
+      <div class="filter-actions">
+        <select id="filter-field-add"><option value="">field</option></select>
+        <select id="filter-op-add"><option value="">op</option></select>
+        <input type="text" id="filter-value-add" placeholder="value">
+        <button class="btn-small" id="btn-add-filter">+</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="control-bar">
+    <div id="mode-row">
+      <label><input type="radio" name="mode" value="normal" checked> Normal</label>
+      <label><input type="radio" name="mode" value="dense_high_winrate"> Dense High WR</label>
+    </div>
+    <button id="btn-run" disabled>Run Backtest</button>
+  </div>
+
+  <div id="status-bar">
+    <span id="status-text">Ready</span>
+    <span id="status-error" class="error"></span>
+  </div>
+
+  <div id="result-area">
+    <div id="table-toolbar">
+      <button class="btn-small" id="btn-save" disabled title="Phase 4">Save</button>
+      <button class="btn-small" id="btn-copy-selected">Copy Selected</button>
+      <button class="btn-small" id="btn-export-csv">Export CSV</button>
+      <button class="btn-small" id="btn-toggle-columns" title="Toggle column visibility">Columns ▾</button>
+      <span class="toolbar-sep">|</span>
+      <span>Font:</span>
+      <button class="btn-small" id="btn-font-down">A-</button>
+      <button class="btn-small" id="btn-font-up">A+</button>
+      <span class="toolbar-sep">|</span>
+      <input type="text" id="search-input" placeholder="Search...">
+      <span class="toolbar-sep">|</span>
+      <span id="result-count"></span>
+    </div>
+    <div id="table-container">
+      <div id="column-chooser" style="display:none"></div>
+      <div id="table-wrapper">
+        <table id="result-table"><thead></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="src/state.js"></script>
+<script src="src/api.js"></script>
+<script src="src/table.js"></script>
+<script src="src/main.js"></script>
+</body>
+</html>
