@@ -22,3 +22,6 @@ result/
 rejected_setups.csv
 backtest_v1/
 backtest_v6/
+old/
+vectorbt/
+.venv/
