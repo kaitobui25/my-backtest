@@ -34,9 +34,10 @@ function renderTable(response) {
 
 function renderColumnChooser() {
   const el = document.getElementById("column-chooser");
-  el.innerHTML = state.columns.map(col =>
-    `<label><input type="checkbox" checked data-col="${col}"> ${col}</label>`
-  ).join("");
+  el.innerHTML = state.columns.map(col => {
+    const hidden = state.columnVisibility[col] === false;
+    return `<label><input type="checkbox"${hidden ? "" : " checked"} data-col="${col}"> ${col}</label>`;
+  }).join("");
 }
 
 function getVisibleColumns() {
@@ -209,7 +210,9 @@ function copySelected() {
 
 function exportCSV() {
   const cols = getVisibleColumns();
-  const rows = state.rows.map(row => cols.map(col => {
+  const filtered = getFilteredRows();
+  const sorted = getSortedRows(filtered);
+  const rows = sorted.map(row => cols.map(col => {
     const v = row[col];
     if (v == null) return "";
     const s = String(v);

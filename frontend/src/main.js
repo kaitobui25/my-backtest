@@ -166,11 +166,13 @@ async function handleRun() {
   updateRunButton();
 
   try {
-    const filters = state.filters.map(f => ({
-      field: f.field,
-      op: f.op,
-      value: isNaN(Number(f.value)) ? f.value : Number(f.value),
-    }));
+    const filters = state.filters
+      .filter(f => f.field && f.op && f.value != null && f.value.toString().trim() !== "")
+      .map(f => ({
+        field: f.field,
+        op: f.op,
+        value: isNaN(Number(f.value)) ? f.value : Number(f.value),
+      }));
 
     const payload = {
       symbol: "BTCUSD",
