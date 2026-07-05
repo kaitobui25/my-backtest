@@ -15,7 +15,10 @@
     </div>
     <div class="panel" id="panel-strategies">
       <div class="panel-title">Strategies</div>
-      <div class="panel-body" id="strategy-list"></div>
+      <div class="panel-body panel-body-split">
+        <div class="panel-col panel-col-list" id="strategy-list"></div>
+        <div class="panel-col panel-col-settings" id="strategy-settings"></div>
+      </div>
     </div>
     <div class="panel" id="panel-selected">
       <div class="panel-title">Selected Setup</div>
@@ -32,13 +35,17 @@
       </div>
     </div>
     <div class="panel" id="panel-filters">
-      <div class="panel-title">Filters</div>
+      <div class="panel-title">Result Filters</div>
       <div class="panel-body" id="filter-list"></div>
       <div class="filter-actions">
         <select id="filter-field-add"><option value="">field</option></select>
         <select id="filter-op-add"><option value="">op</option></select>
         <input type="text" id="filter-value-add" placeholder="value">
         <button class="btn-small" id="btn-add-filter">+</button>
+      </div>
+      <div class="panel-section">
+        <div class="panel-subtitle">Search Grid</div>
+        <div id="search-grid"></div>
       </div>
     </div>
   </div>

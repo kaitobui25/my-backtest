@@ -29,6 +29,20 @@ const state = {
   lastRunPayload: null,
   lastTiming: null,
   runningStartTime: null,
+  strategyParamSchemas: {},
+  gridParamSchema: {},
+  strategySettings: {},
+  activeStrategy: null,
+  gridSettings: {
+    profile: "dense",
+    sl_values: "",
+    tp_values: "",
+    max_holds: "",
+  },
+  densitySettings: {
+    min_trades_per_day: 0.33,
+    min_test_trades_per_day: 0.33,
+  },
 };
 
 function setState(updates) {

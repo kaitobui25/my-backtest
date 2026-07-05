@@ -1,0 +1,62 @@
+# Phase 2 Checklist — Frontend
+
+- Do not change backend logic in Phase 2.
+- Update `frontend/src/state.js`.
+- Add:
+  - strategyParamSchemas
+  - gridParamSchema
+  - strategySettings
+  - activeStrategy
+  - gridSettings
+  - densitySettings
+- Update options loading.
+- Store from `/api/options`:
+  - strategy_param_schemas
+  - grid_param_schema
+- Split Strategies panel into 2 parts:
+  - left: strategy list
+  - right: active strategy settings
+- Keep current strategy click behavior.
+- On strategy click:
+  - select/unselect strategy
+  - set activeStrategy
+  - render that strategy's settings
+- Render simple controls first:
+  - min/max number inputs for range params
+  - checkboxes for multi-select params
+  - dropdown only if needed
+- Do not build double sliders yet.
+- Split Filters panel into 2 parts:
+  - top: current result filters
+  - bottom: search grid settings
+- Add grid inputs:
+  - sl_values
+  - tp_values
+  - max_holds
+  - min_trades_per_day
+  - min_test_trades_per_day
+- Use CSV input first for grid values.
+- Add helper functions:
+  - parseNumberList()
+  - parseIntList()
+  - buildSearchParams()
+- Update backtest payload.
+- Send `search_params` with:
+  - grid_profile
+  - sl_values
+  - tp_values
+  - max_holds
+  - min_trades_per_day
+  - min_test_trades_per_day
+  - strategy_params
+- Update saved run restore logic.
+- Saved runs must restore:
+  - selected strategies
+  - strategy settings
+  - grid settings
+  - density settings
+  - full search_params
+- Test normal mode with VOL_EXPANSION_CONT.
+- Confirm changing strategy settings changes result rows.
+- Confirm changing SL/TP/max_hold changes result rows.
+- Confirm saved run restores the full setup.

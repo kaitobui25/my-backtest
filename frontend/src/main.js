@@ -5,6 +5,8 @@ async function init() {
     state.strategies = opts.indicators;
     state.filterFields = opts.filter_fields;
     state.operators = opts.operators;
+    state.strategyParamSchemas = opts.strategy_param_schemas || {};
+    state.gridParamSchema = opts.grid_param_schema || {};
     populateFilterAddControls();
     renderAll();
     initTable();
@@ -18,8 +20,10 @@ async function init() {
 function renderAll() {
   renderTimeframes();
   renderStrategies();
+  renderStrategySettings();
   renderSelected();
   renderFilters();
+  renderSearchGrid();
   updateRunButton();
 }
 
@@ -35,6 +39,43 @@ function renderStrategies() {
   el.innerHTML = state.strategies.map(s =>
     `<div class="item${state.selectedStrategies.includes(s) ? " selected" : ""}" data-value="${s}">${s}</div>`
   ).join("");
+}
+
+function renderStrategySettings() {
+  const el = document.getElementById("strategy-settings");
+  const s = state.activeStrategy;
+  const schema = state.strategyParamSchemas[s];
+  if (!s || !schema) {
+    el.innerHTML = '<div class="settings-placeholder">Click a strategy to edit</div>';
+    return;
+  }
+  const settings = state.strategySettings[s] || {};
+  let html = `<div class="settings-strat-name">${s}</div>`;
+  for (const [param, meta] of Object.entries(schema)) {
+    const value = settings[param] || meta.default;
+    if (meta.type === "range") {
+      html += `<div class="setting-row">
+        <label>${param}</label>
+        <div class="setting-range">
+          <input type="number" class="setting-min" data-strat="${s}" data-param="${param}" value="${value[0]}" min="${meta.min}" max="${meta.max}" step="${meta.step}">
+          <span>to</span>
+          <input type="number" class="setting-max" data-strat="${s}" data-param="${param}" value="${value[1]}" min="${meta.min}" max="${meta.max}" step="${meta.step}">
+        </div>
+      </div>`;
+    } else if (meta.type === "select") {
+      const checkboxHtml = meta.options.map(opt =>
+        `<label class="setting-checkbox">
+          <input type="checkbox" data-strat="${s}" data-param="${param}" value="${opt}" ${value.includes(opt) ? "checked" : ""}>
+          ${opt}
+        </label>`
+      ).join("");
+      html += `<div class="setting-row">
+        <label>${param}</label>
+        <div class="setting-checkbox-group">${checkboxHtml}</div>
+      </div>`;
+    }
+  }
+  el.innerHTML = html;
 }
 
 function renderSelected() {
@@ -69,6 +110,46 @@ function renderFilters() {
       <button class="btn-remove" data-idx="${i}">&times;</button>
     </div>
   `).join("");
+}
+
+function renderSearchGrid() {
+  const el = document.getElementById("search-grid");
+  const schema = state.gridParamSchema;
+  if (!schema || Object.keys(schema).length === 0) {
+    el.innerHTML = "";
+    return;
+  }
+  const gs = state.gridSettings;
+  const ds = state.densitySettings;
+  el.innerHTML = `
+    <div class="grid-row">
+      <label>Profile</label>
+      <select id="grid-profile">
+        <option value="dense" ${gs.profile === "dense" ? "selected" : ""}>Dense</option>
+        <option value="normal" ${gs.profile === "normal" ? "selected" : ""}>Normal</option>
+      </select>
+    </div>
+    <div class="grid-row">
+      <label>SL values</label>
+      <input type="text" id="grid-sl" value="${gs.sl_values}" placeholder="e.g. 0.02, 0.04, 0.06">
+    </div>
+    <div class="grid-row">
+      <label>TP values</label>
+      <input type="text" id="grid-tp" value="${gs.tp_values}" placeholder="e.g. 0.005, 0.01, 0.02">
+    </div>
+    <div class="grid-row">
+      <label>Max Hold</label>
+      <input type="text" id="grid-max-hold" value="${gs.max_holds}" placeholder="e.g. 16, 32, 64">
+    </div>
+    <div class="grid-row">
+      <label>Min trades/day</label>
+      <input type="number" id="grid-mtpd" value="${ds.min_trades_per_day}" min="0.1" max="5" step="0.01">
+    </div>
+    <div class="grid-row">
+      <label>Min test trades/day</label>
+      <input type="number" id="grid-mttpd" value="${ds.min_test_trades_per_day}" min="0.1" max="5" step="0.01">
+    </div>
+  `;
 }
 
 function populateFilterAddControls() {
@@ -122,6 +203,46 @@ function updateDirtyIndicator() {
   if (el) el.textContent = state.dirty ? "unsaved" : "";
 }
 
+function parseNumberList(text) {
+  if (!text || !text.trim()) return null;
+  const nums = text.split(",")
+    .map(s => s.trim())
+    .filter(s => s !== "" && !isNaN(Number(s)))
+    .map(Number);
+  return nums.length > 0 ? nums : null;
+}
+
+function parseIntList(text) {
+  if (!text || !text.trim()) return null;
+  const nums = text.split(",")
+    .map(s => s.trim())
+    .filter(s => s !== "" && !isNaN(parseInt(s, 10)))
+    .map(s => parseInt(s, 10));
+  return nums.length > 0 ? nums : null;
+}
+
+function buildSearchParams() {
+  const gs = state.gridSettings;
+  const ds = state.densitySettings;
+  const strategy_params = {};
+  for (const [name, settings] of Object.entries(state.strategySettings)) {
+    if (state.selectedStrategies.includes(name)) {
+      strategy_params[name] = settings;
+    }
+  }
+  const params = { strategy_params };
+  const sl = parseNumberList(gs.sl_values);
+  if (sl) params.sl_values = sl;
+  const tp = parseNumberList(gs.tp_values);
+  if (tp) params.tp_values = tp;
+  const mh = parseIntList(gs.max_holds);
+  if (mh) params.max_holds = mh;
+  params.grid_profile = gs.profile;
+  params.min_trades_per_day = parseFloat(ds.min_trades_per_day) || 0.33;
+  params.min_test_trades_per_day = parseFloat(ds.min_test_trades_per_day) || 0.33;
+  return params;
+}
+
 function showError(msg) {
   const el = document.getElementById("status-error");
   el.textContent = msg;
@@ -150,7 +271,19 @@ function toggleStrategy(s) {
   } else {
     state.selectedStrategies.push(s);
   }
+  state.activeStrategy = s;
+  if (!state.strategySettings[s]) {
+    const schema = state.strategyParamSchemas[s];
+    if (schema) {
+      const settings = {};
+      for (const [param, meta] of Object.entries(schema)) {
+        settings[param] = [...meta.default];
+      }
+      state.strategySettings[s] = settings;
+    }
+  }
   renderStrategies();
+  renderStrategySettings();
   renderSelected();
   updateRunButton();
 }
@@ -230,6 +363,7 @@ async function handleRun() {
       strategies: state.selectedStrategies.length > 0 ? state.selectedStrategies : null,
       filters,
       limit: 500,
+      search_params: buildSearchParams(),
     };
 
     const result = await runBacktestAPI(payload, controller.signal);
@@ -307,6 +441,46 @@ function bindEvents() {
     });
   });
 
+  document.getElementById("strategy-settings").addEventListener("change", e => {
+    const target = e.target;
+    const strat = target.dataset.strat;
+    const param = target.dataset.param;
+    if (!strat || !param) return;
+    if (!state.strategySettings[strat]) state.strategySettings[strat] = {};
+    if (target.classList.contains("setting-min")) {
+      if (!Array.isArray(state.strategySettings[strat][param])) state.strategySettings[strat][param] = [null, null];
+      state.strategySettings[strat][param][0] = parseFloat(target.value);
+    } else if (target.classList.contains("setting-max")) {
+      if (!Array.isArray(state.strategySettings[strat][param])) state.strategySettings[strat][param] = [null, null];
+      state.strategySettings[strat][param][1] = parseFloat(target.value);
+    } else if (target.type === "checkbox") {
+      if (!Array.isArray(state.strategySettings[strat][param])) state.strategySettings[strat][param] = [];
+      if (target.checked) {
+        if (!state.strategySettings[strat][param].includes(target.value)) {
+          state.strategySettings[strat][param].push(target.value);
+        }
+      } else {
+        state.strategySettings[strat][param] = state.strategySettings[strat][param].filter(v => v !== target.value);
+      }
+    }
+  });
+
+  document.getElementById("search-grid").addEventListener("change", e => {
+    const target = e.target;
+    if (target.id === "grid-profile") state.gridSettings.profile = target.value;
+    if (target.id === "grid-mtpd") state.densitySettings.min_trades_per_day = target.value;
+    if (target.id === "grid-mttpd") state.densitySettings.min_test_trades_per_day = target.value;
+  });
+
+  document.getElementById("search-grid").addEventListener("input", e => {
+    const target = e.target;
+    if (target.id === "grid-sl") state.gridSettings.sl_values = target.value;
+    if (target.id === "grid-tp") state.gridSettings.tp_values = target.value;
+    if (target.id === "grid-max-hold") state.gridSettings.max_holds = target.value;
+    if (target.id === "grid-mtpd") state.densitySettings.min_trades_per_day = target.value;
+    if (target.id === "grid-mttpd") state.densitySettings.min_test_trades_per_day = target.value;
+  });
+
   document.getElementById("btn-run").addEventListener("click", handleRun);
   document.getElementById("btn-save").addEventListener("click", handleSave);
   document.getElementById("saved-runs-list").addEventListener("click", e => {
@@ -328,6 +502,7 @@ async function handleSave() {
   }
 
   const payloadMeta = state.lastRunPayload;
+  const search_params = buildSearchParams();
   const metadata = {
     symbol: payloadMeta ? payloadMeta.symbol : "BTCUSD",
     timeframes: payloadMeta ? payloadMeta.timeframes : state.selectedTimeframes,
@@ -336,6 +511,7 @@ async function handleSave() {
     filters: payloadMeta ? (payloadMeta.filters || []) : state.filters.filter(f => f.field && f.op),
     row_count: state.rows.length,
     note: "",
+    search_params,
   };
   if (state.lastTiming) metadata.timing = state.lastTiming;
 
@@ -395,6 +571,22 @@ async function handleLoadSavedRun(runId) {
     state.loadedFromSave = true;
     state.dirty = false;
     updateDirtyIndicator();
+
+    const sp = meta.search_params;
+    if (sp) {
+      state.gridSettings.profile = sp.grid_profile || "dense";
+      state.gridSettings.sl_values = Array.isArray(sp.sl_values) ? sp.sl_values.join(", ") : "";
+      state.gridSettings.tp_values = Array.isArray(sp.tp_values) ? sp.tp_values.join(", ") : "";
+      state.gridSettings.max_holds = Array.isArray(sp.max_holds) ? sp.max_holds.join(", ") : "";
+      state.densitySettings.min_trades_per_day = sp.min_trades_per_day ?? 0.33;
+      state.densitySettings.min_test_trades_per_day = sp.min_test_trades_per_day ?? 0.33;
+      if (sp.strategy_params && typeof sp.strategy_params === "object") {
+        state.strategySettings = {};
+        for (const [strat, settings] of Object.entries(sp.strategy_params)) {
+          state.strategySettings[strat] = settings;
+        }
+      }
+    }
 
     renderAll();
     renderColumnChooser();
