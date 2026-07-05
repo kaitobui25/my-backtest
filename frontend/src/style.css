@@ -285,11 +285,8 @@ body {
 }
 #result-table td.star {
   cursor: pointer;
-  color: #ccc;
+  color: #e6a817;
   font-size: 14px;
-}
-#result-table td.star.active {
-  color: #f5a623;
 }
 #result-table td.cb {
   text-align: center;
