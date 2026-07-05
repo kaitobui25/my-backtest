@@ -1,0 +1,44 @@
+# Phase 1 Checklist — Backend
+
+- Create `app/backtest/strategy_params.py`.
+- Add strategy parameter schemas for backend + UI.
+- Start with `VOL_EXPANSION_CONT`.
+- Use dense-style defaults:
+  - range_mult: [0.8, 2.0]
+  - trend: ["none", "ema100", "ema200"]
+  - adx_min: [8, 24]
+  - close_extreme: [0.60, 0.85]
+  - body_min: [0.45, 0.55]
+- Add grid schema:
+  - sl_values
+  - tp_values
+  - max_holds
+  - min_trades_per_day = 0.33
+  - min_test_trades_per_day = 0.33
+- Update `/api/options`.
+- Return:
+  - strategy_param_schemas
+  - grid_param_schema
+- Update `build_signal_variants()`.
+- Add optional `strategy_params` argument.
+- Allow normal mode to read `search_params.strategy_params`.
+- Make normal `VOL_EXPANSION_CONT` use dense-style params by default.
+- Update `evaluate_normal_timeframe()`.
+- Replace fixed default trade count with:
+  - min_trades = ceil(days * min_trades_per_day)
+  - min_test_trades = ceil(test_days * min_test_trades_per_day)
+- Keep `min_full_trades` and `min_test_trades` only as explicit overrides.
+- Replace hardcoded signal pre-filter `>= 8` with dynamic `min_trades`.
+- Apply dynamic pre-filter before and after side-mode filtering.
+- Change normal grid default to dense grid.
+- Support override:
+  - sl_values
+  - tp_values
+  - max_holds
+  - grid_profile = "dense" | "normal"
+- Do not modify entry-aware engine.
+- Do not modify same-candle SL/TP logic.
+- Do not modify dense mode.
+- Do not modify frontend in Phase 1.
+- Run backend compile/test.
+- Test `/api/backtest` with normal + VOL_EXPANSION_CONT + custom `search_params`.

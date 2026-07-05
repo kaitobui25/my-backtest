@@ -7,19 +7,14 @@ import pandas as pd
 
 from app.backtest.batch_engine import simulate_many_configs_with_entries_summary
 from app.backtest.config import (
-    DENSE_MIN_TEST_TRADES_PER_DAY,
     DENSE_MIN_TEST_WIN_RATE,
-    DENSE_MIN_TRADES_PER_DAY,
     DENSE_MIN_WIN_RATE,
     DENSE_TIMEFRAMES,
     FEE_PER_SIDE,
-    MIN_FULL_TRADES,
-    MIN_TEST_TRADES,
     NORMAL_TIMEFRAMES,
     REQUIRED_COLUMNS,
     TEST_START,
     dense_grid_for_timeframe,
-    normal_grid_for_timeframe,
 )
 from app.backtest.data_loader import load_ohlc
 from app.backtest.engine import calendar_days_ns
@@ -88,25 +83,32 @@ def evaluate_normal_timeframe(
     days = calendar_days_ns(index_ns)
     test_days = calendar_days_ns(index_ns, is_test_exit)
 
-    signals = build_signal_variants(df=df, timeframe=timeframe, mode="normal", strategies=strategies)
+    strategy_params = search_params.get("strategy_params", {})
+    signals = build_signal_variants(df=df, timeframe=timeframe, mode="normal", strategies=strategies, strategy_params=strategy_params)
     max_signal_variants = search_params.get("max_signal_variants")
     if max_signal_variants is not None:
         signals = signals[: int(max_signal_variants)]
 
-    sl_values, tp_values, max_holds = _grid(normal_grid_for_timeframe(timeframe), search_params)
-    min_full_trades = _filter_value(search_params, "min_full_trades", MIN_FULL_TRADES, timeframe)
-    min_test_trades = _filter_value(search_params, "min_test_trades", MIN_TEST_TRADES, timeframe)
+    sl_values, tp_values, max_holds = _grid(dense_grid_for_timeframe(timeframe), search_params)
+    min_full_trades = int(np.ceil(days * search_params.get("min_trades_per_day", 0.33)))
+    min_test_trades = int(np.ceil(test_days * search_params.get("min_test_trades_per_day", 0.33)))
+    explicit_min_full = _filter_value(search_params, "min_full_trades", None, timeframe)
+    explicit_min_test = _filter_value(search_params, "min_test_trades", None, timeframe)
+    if explicit_min_full is not None:
+        min_full_trades = int(explicit_min_full)
+    if explicit_min_test is not None:
+        min_test_trades = int(explicit_min_test)
     min_test_win_rate = search_params.get("min_test_win_rate", 48)
     min_profit_factor = search_params.get("min_profit_factor", 1.05)
     min_test_profit_factor = search_params.get("min_test_profit_factor", 1.0)
 
     rows: list[dict[str, Any]] = []
     for signal in signals:
-        if signal.long_entries.sum() + signal.short_entries.sum() < 8:
+        if signal.long_entries.sum() + signal.short_entries.sum() < min_full_trades:
             continue
         for side_mode in signal.side_modes:
             longs, shorts = side_mode_arrays(signal.long_entries, signal.short_entries, side_mode)
-            if longs.sum() + shorts.sum() < 8:
+            if longs.sum() + shorts.sum() < min_full_trades:
                 continue
             sl_arr, tp_arr, mh_arr = build_config_grid(sl_values, tp_values, max_holds)
             (

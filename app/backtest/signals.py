@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from app.backtest.indicators import adx, atr, ema, macd, rsi, squeeze_momentum, supertrend, wavetrend, williams_vix_fix
+from app.backtest.strategy_params import VOL_EXPANSION_CONT_DEFAULTS
 
 
 Signal = tuple[str, str, np.ndarray, np.ndarray, tuple[str, ...]]
@@ -35,7 +36,7 @@ def side_mode_arrays(long_entries: np.ndarray, short_entries: np.ndarray, side_m
     return long_entries, short_entries
 
 
-def build_signals(df: pd.DataFrame, timeframe: str) -> list[Signal]:
+def build_signals(df: pd.DataFrame, timeframe: str, strategy_params: dict | None = None) -> list[Signal]:
     close = df["close"]
     open_ = df["open"]
     high = df["high"]
@@ -154,17 +155,36 @@ def build_signals(df: pd.DataFrame, timeframe: str) -> list[Signal]:
     range_ma = range_pct.rolling(50, min_periods=50).median()
     body = (close - open_).abs()
     body_ratio = body / (high - low).replace(0, np.nan)
-    for mult, trend_name, trend_ema, adx_min, close_extreme in product(
-        [1.5, 2.0],
-        ["200"],
-        [ema200],
-        [18, 24],
-        [0.75, 0.85],
+    _vol_p = (strategy_params or {}).get("VOL_EXPANSION_CONT", VOL_EXPANSION_CONT_DEFAULTS)
+    vol_range_mult = _vol_p.get("range_mult", VOL_EXPANSION_CONT_DEFAULTS["range_mult"])
+    vol_trend_names = _vol_p.get("trend", VOL_EXPANSION_CONT_DEFAULTS["trend"])
+    vol_adx_min = _vol_p.get("adx_min", VOL_EXPANSION_CONT_DEFAULTS["adx_min"])
+    vol_close_extreme = _vol_p.get("close_extreme", VOL_EXPANSION_CONT_DEFAULTS["close_extreme"])
+    vol_body_min = _vol_p.get("body_min", VOL_EXPANSION_CONT_DEFAULTS["body_min"])
+    vol_trend_map: list[tuple[str, object]] = []
+    for tn in vol_trend_names:
+        if tn == "none":
+            vol_trend_map.append(("none", None))
+        elif tn == "ema100":
+            vol_trend_map.append(("ema100", ema100))
+        elif tn == "ema200":
+            vol_trend_map.append(("ema200", ema200))
+        elif tn == "200":
+            vol_trend_map.append(("200", ema200))
+    for mult, (trend_name, trend_ema), adx_min, close_extreme, body_min in product(
+        vol_range_mult,
+        vol_trend_map,
+        vol_adx_min,
+        vol_close_extreme,
+        vol_body_min,
     ):
         strong_range = range_pct >= mult * range_ma
-        long_sig = strong_range & (close > trend_ema) & (adx14 >= adx_min) & (body_ratio >= 0.55) & (ibs >= close_extreme)
-        short_sig = strong_range & (close < trend_ema) & (adx14 >= adx_min) & (body_ratio >= 0.55) & (ibs <= 1 - close_extreme)
-        params = f"range_mult={mult},trend={trend_name},adx_min={adx_min},extreme={close_extreme}"
+        long_sig = strong_range & (adx14 >= adx_min) & (body_ratio >= body_min) & (ibs >= close_extreme)
+        short_sig = strong_range & (adx14 >= adx_min) & (body_ratio >= body_min) & (ibs <= 1 - close_extreme)
+        if trend_ema is not None:
+            long_sig &= close > trend_ema
+            short_sig &= close < trend_ema
+        params = f"range_mult={mult},trend={trend_name},adx_min={adx_min},close_extreme={close_extreme},body_min={body_min}"
         signals.append(("VOL_EXPANSION_CONT", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
 
     for period, mult, trend_name, trend_ema in product(
@@ -299,10 +319,11 @@ def _build_normal_variants(
     df: pd.DataFrame,
     timeframe: str,
     strategies: set[str] | None,
+    strategy_params: dict | None = None,
 ) -> list[SignalVariant]:
     return [
         SignalVariant(strategy, params, le, se, sm)
-        for strategy, params, le, se, sm in build_signals(df, timeframe)
+        for strategy, params, le, se, sm in build_signals(df, timeframe, strategy_params)
         if strategies is None or strategy in strategies
     ]
 
@@ -311,6 +332,7 @@ def _build_dense_variants(
     df: pd.DataFrame,
     timeframe: str,
     strategies: set[str] | None,
+    strategy_params: dict | None = None,
 ) -> list[SignalVariant]:
     results: list[SignalVariant] = []
     for strategy_name, mode_builders in STRATEGY_BUILDERS.items():
@@ -334,16 +356,18 @@ def build_signal_variants(
     timeframe: str,
     mode: str,
     strategies: list[str] | set[str] | None = None,
+    strategy_params: dict | None = None,
 ) -> list[SignalVariant]:
-    # Normal mode wraps build_signals() (all strategies in one pass).
-    # Dense mode dispatches per-strategy via STRATEGY_BUILDERS registry.
     if strategies is not None:
         strategies = set(strategies)
+
+    if mode == "normal":
+        return _build_normal_variants(df, timeframe, strategies, strategy_params)
 
     builder = _MODE_BUILDERS.get(mode)
     if builder is None:
         return []
-    return builder(df, timeframe, strategies)
+    return builder(df, timeframe, strategies, strategy_params=strategy_params)
 
 
 def _build_dense_vol_variants(df: pd.DataFrame, timeframe: str) -> list[SignalVariant]:

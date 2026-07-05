@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.backtest.strategy_params import GRID_PARAM_SCHEMA, STRATEGY_PARAM_SCHEMAS
+
 
 router = APIRouter(prefix="/api", tags=["options"])
 
@@ -57,7 +59,7 @@ def health() -> dict[str, str]:
 
 
 @router.get("/options")
-def options() -> dict[str, list[str]]:
+def options() -> dict:
     return {
         "symbols": ["BTCUSD"],
         "timeframes": TIMEFRAMES,
@@ -65,4 +67,6 @@ def options() -> dict[str, list[str]]:
         "indicators": INDICATORS,
         "filter_fields": FILTER_FIELDS,
         "operators": OPERATORS,
+        "strategy_param_schemas": STRATEGY_PARAM_SCHEMAS,
+        "grid_param_schema": GRID_PARAM_SCHEMA,
     }
