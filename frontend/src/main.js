@@ -25,6 +25,7 @@ function renderAll() {
   renderSelected();
   renderFilters();
   renderSearchGrid();
+  renderExecutionSettings();
   updateRunButton();
 }
 
@@ -185,6 +186,10 @@ function snapshotCurrentConfig() {
     gridMtpd: String(state.densitySettings.min_trades_per_day),
     gridMttpd: String(state.densitySettings.min_test_trades_per_day),
     strategySettings: JSON.stringify(state.strategySettings),
+    entryMode: state.executionSettings.entry_next_open ? "next_open" : "same_open",
+    useSpread: String(state.executionSettings.use_spread_slippage),
+    spreadPct: String(state.executionSettings.spread_pct),
+    slippagePct: String(state.executionSettings.slippage_pct),
   };
 }
 
@@ -201,12 +206,16 @@ function getConfigValue(key) {
     case "gridMtpd": return String(state.densitySettings.min_trades_per_day);
     case "gridMttpd": return String(state.densitySettings.min_test_trades_per_day);
     case "strategySettings": return JSON.stringify(state.strategySettings);
+    case "entryMode": return state.executionSettings.entry_next_open ? "next_open" : "same_open";
+    case "useSpread": return String(state.executionSettings.use_spread_slippage);
+    case "spreadPct": return String(state.executionSettings.spread_pct);
+    case "slippagePct": return String(state.executionSettings.slippage_pct);
     default: return "";
   }
 }
 
 function hasTrackableResult() {
-  return state.loading || (state.rows.length > 0 && state.lastRunConfigSnapshot !== null);
+  return state.loading || (state.rows.length > 0 && !state.currentRunId && state.lastRunConfigSnapshot !== null);
 }
 
 function isConfigKeyChanged(key) {
@@ -260,6 +269,42 @@ function renderSearchGrid() {
   `;
 }
 
+function renderExecutionSettings() {
+  const el = document.getElementById("execution-settings");
+  const es = state.executionSettings;
+  el.innerHTML = `
+    <div class="exec-row">
+      <label class="exec-checkbox">
+        <input type="checkbox" id="exec-entry-next" ${es.entry_next_open ? "checked" : ""}>
+        Entry next open
+      </label>
+    </div>
+    <div class="exec-row">
+      <label class="exec-checkbox">
+        <input type="checkbox" id="exec-use-spread" ${es.use_spread_slippage ? "checked" : ""}>
+        Use spread/slippage
+      </label>
+    </div>
+    <div class="exec-sub ${es.use_spread_slippage ? "" : "exec-disabled"}">
+      <div class="exec-row">
+        <label>Spread %</label>
+        <input type="number" id="exec-spread-pct" value="${es.spread_pct}" min="0" max="0.1" step="0.0001" ${es.use_spread_slippage ? "" : "disabled"}>
+      </div>
+      <div class="exec-row">
+        <label>Slippage %</label>
+        <input type="number" id="exec-slippage-pct" value="${es.slippage_pct}" min="0" max="0.1" step="0.0001" ${es.use_spread_slippage ? "" : "disabled"}>
+      </div>
+    </div>
+  `;
+}
+
+function dirtyTrack(key) {
+  const el = document.getElementById("execution-settings");
+  if (el) {
+    el.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged(key));
+  }
+}
+
 function populateFilterAddControls() {
   const fieldSel = document.getElementById("filter-field-add");
   fieldSel.innerHTML = '<option value="">field</option>' +
@@ -270,6 +315,7 @@ function populateFilterAddControls() {
     state.operators.map(o => `<option value="${o}">${o}</option>`).join("");
 }
 
+let strategyClickTimer = null;
 let timerInterval = null;
 
 function updateRunButton() {
@@ -332,6 +378,7 @@ function parseIntList(text) {
 function buildSearchParams() {
   const gs = state.gridSettings;
   const ds = state.densitySettings;
+  const es = state.executionSettings;
   const strategy_params = {};
   for (const [name, settings] of Object.entries(state.strategySettings)) {
     if (state.selectedStrategies.includes(name)) {
@@ -348,6 +395,10 @@ function buildSearchParams() {
   params.grid_profile = gs.profile;
   params.min_trades_per_day = parseFloat(ds.min_trades_per_day) || 0.33;
   params.min_test_trades_per_day = parseFloat(ds.min_test_trades_per_day) || 0.33;
+  params.entry_mode = es.entry_next_open ? "next_open" : "same_open";
+  params.use_spread_slippage = es.use_spread_slippage;
+  params.spread_pct = Number(es.spread_pct) || 0;
+  params.slippage_pct = Number(es.slippage_pct) || 0;
   return params;
 }
 
@@ -425,6 +476,10 @@ function handleFilterChange(e) {
   if (e.target.classList.contains("field-sel")) state.filters[idx].field = e.target.value;
   else if (e.target.classList.contains("op-sel")) state.filters[idx].op = e.target.value;
   else if (e.target.classList.contains("val-inp")) state.filters[idx].value = e.target.value;
+  const panel = document.getElementById("filter-list").closest(".panel");
+  if (panel) {
+    panel.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("filters"));
+  }
 }
 
 function addFilter() {
@@ -526,15 +581,28 @@ function bindEvents() {
 
   document.getElementById("strategy-list").addEventListener("click", e => {
     const item = e.target.closest(".item");
-    if (item) activateStrategy(item.dataset.value);
+    if (!item) return;
+    if (e.detail !== 1) return;
+    if (strategyClickTimer) {
+      clearTimeout(strategyClickTimer);
+      strategyClickTimer = null;
+    }
+    strategyClickTimer = setTimeout(() => {
+      strategyClickTimer = null;
+      activateStrategy(item.dataset.value);
+    }, 200);
   });
 
   document.getElementById("strategy-list").addEventListener("dblclick", e => {
     const item = e.target.closest(".item");
-    if (item) {
-      e.preventDefault();
-      toggleSelectedStrategy(item.dataset.value);
+    if (!item) return;
+    e.preventDefault();
+    if (strategyClickTimer) {
+      clearTimeout(strategyClickTimer);
+      strategyClickTimer = null;
     }
+    activateStrategy(item.dataset.value);
+    toggleSelectedStrategy(item.dataset.value);
   });
 
   document.getElementById("panel-selected").addEventListener("click", e => {
@@ -620,11 +688,46 @@ function bindEvents() {
 
   document.getElementById("search-grid").addEventListener("input", e => {
     const target = e.target;
-    if (target.id === "grid-sl") state.gridSettings.sl_values = target.value;
-    if (target.id === "grid-tp") state.gridSettings.tp_values = target.value;
-    if (target.id === "grid-max-hold") state.gridSettings.max_holds = target.value;
-    if (target.id === "grid-mtpd") state.densitySettings.min_trades_per_day = target.value;
-    if (target.id === "grid-mttpd") state.densitySettings.min_test_trades_per_day = target.value;
+    const row = target.closest(".grid-row");
+    const setDirty = (key) => {
+      if (row) row.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged(key));
+    };
+    if (target.id === "grid-sl") { state.gridSettings.sl_values = target.value; setDirty("gridSl"); }
+    if (target.id === "grid-tp") { state.gridSettings.tp_values = target.value; setDirty("gridTp"); }
+    if (target.id === "grid-max-hold") { state.gridSettings.max_holds = target.value; setDirty("gridMh"); }
+    if (target.id === "grid-mtpd") {
+      state.densitySettings.min_trades_per_day = target.value;
+      if (row) row.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("gridMtpd"));
+    }
+    if (target.id === "grid-mttpd") {
+      state.densitySettings.min_test_trades_per_day = target.value;
+      if (row) row.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("gridMttpd"));
+    }
+  });
+
+  document.getElementById("execution-settings").addEventListener("change", e => {
+    const target = e.target;
+    if (target.id === "exec-entry-next") {
+      state.executionSettings.entry_next_open = target.checked;
+      dirtyTrack("entryMode");
+    }
+    if (target.id === "exec-use-spread") {
+      state.executionSettings.use_spread_slippage = target.checked;
+      renderExecutionSettings();
+      dirtyTrack("useSpread");
+    }
+  });
+
+  document.getElementById("execution-settings").addEventListener("input", e => {
+    const target = e.target;
+    if (target.id === "exec-spread-pct") {
+      state.executionSettings.spread_pct = target.value;
+      dirtyTrack("spreadPct");
+    }
+    if (target.id === "exec-slippage-pct") {
+      state.executionSettings.slippage_pct = target.value;
+      dirtyTrack("slippagePct");
+    }
   });
 
   document.getElementById("btn-run").addEventListener("click", handleRun);
@@ -733,6 +836,10 @@ async function handleLoadSavedRun(runId) {
           state.strategySettings[strat] = settings;
         }
       }
+      state.executionSettings.entry_next_open = sp.entry_mode === "next_open";
+      state.executionSettings.use_spread_slippage = sp.use_spread_slippage === true;
+      state.executionSettings.spread_pct = sp.spread_pct ?? 0;
+      state.executionSettings.slippage_pct = sp.slippage_pct ?? 0;
     }
 
     const savedStrats = Object.keys(state.strategySettings);

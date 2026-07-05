@@ -521,6 +521,42 @@ body {
   width: 70px;
 }
 
+.exec-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.exec-row > label {
+  flex-shrink: 0;
+  min-width: 70px;
+  color: #555;
+}
+.exec-row input[type="number"] {
+  width: 70px;
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid #bbb;
+  border-radius: 2px;
+}
+.exec-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+  color: #333;
+}
+.exec-sub {
+  padding-left: 8px;
+}
+.exec-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 .item.active {
   background: #fff3cd;
   border-color: #ffc07a;

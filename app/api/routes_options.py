@@ -37,6 +37,8 @@ FILTER_FIELDS = [
     "max_drawdown",
     "avg_win",
     "avg_loss",
+    "rr",
+    "realized_rr",
     "test_trades",
     "test_win_rate",
     "test_total_return",
@@ -48,6 +50,8 @@ FILTER_FIELDS = [
     "test_trades_per_day",
     "test_max_gap_days",
     "test_avg_bars_held",
+    "ambiguous_trades",
+    "ambiguous_rate",
     "score",
 ]
 OPERATORS = [">", ">=", "<", "<=", "=", "~"]

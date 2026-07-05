@@ -175,14 +175,15 @@ def _batched_normal_result(open_, high, low, close, longs, shorts, configs, fee,
     }
 
 
-def _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start, index_ns, days, test_days):
+def _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start, index_ns, days, test_days, entry_next_open=False, spread_pct=0.0, slippage_pct=0.0):
     sl_arr, tp_arr, mh_arr = configs
     (
         tr, wr, tre, pf, exp, mdd, aw, al,
         tpd_a, mgd_a, abh_a,
         ttr, twr, tre2, tpf, texp,
         ttpd_a, tmgd_a, tabh_a,
-    ) = simulate_many_configs_with_entries_summary(open_, high, low, close, longs, shorts, sl_arr, tp_arr, mh_arr, fee, test_start, index_ns, days, test_days)
+        amb_a,
+    ) = simulate_many_configs_with_entries_summary(open_, high, low, close, longs, shorts, sl_arr, tp_arr, mh_arr, fee, test_start, index_ns, days, test_days, entry_next_open, spread_pct, slippage_pct)
     return {
         "trades": tr[0],
         "win_rate": wr[0],
@@ -203,6 +204,7 @@ def _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, 
         "test_trades_per_day": ttpd_a[0],
         "test_max_gap_days": tmgd_a[0],
         "test_avg_bars_held": tabh_a[0],
+        "ambiguous_trades": int(amb_a[0]),
     }
 
 
@@ -456,6 +458,153 @@ def test_final_bar_forced_exit_normal():
     assert new["trades"] == 1
     expected_ret = (close[-1] / open_[0] - 1.0) * 100
     assert abs(new["total_return"] - expected_ret) < 1e-9
+
+
+def test_rr_computation():
+    from app.backtest.result_builder import _compute_rr, _compute_realized_rr
+    assert _compute_rr(0.02, 0.01) == 2.0
+    assert _compute_rr(0.03, 0.01) == 3.0
+    assert np.isnan(_compute_rr(0.02, 0.0))
+    assert np.isnan(_compute_rr(0.02, -0.01))
+
+    assert _compute_realized_rr(5.0, -2.5) == 2.0
+    assert _compute_realized_rr(6.0, -3.0) == 2.0
+    assert np.isnan(_compute_realized_rr(float("nan"), -2.5))
+    assert np.isnan(_compute_realized_rr(5.0, float("nan")))
+    assert np.isnan(_compute_realized_rr(5.0, 0.0))
+    assert np.isnan(_compute_realized_rr(5.0, 1.0))
+
+
+def test_ambiguous_rate_computation():
+    from app.backtest.result_builder import _compute_ambiguous_rate
+    assert _compute_ambiguous_rate(3, 10) == 30.0
+    assert _compute_ambiguous_rate(0, 10) == 0.0
+    assert np.isnan(_compute_ambiguous_rate(0, 0))
+
+
+def test_entry_next_open_uses_next_candle():
+    np.random.seed(42)
+    n = 200
+    open_, high, low, close = _synthetic_ohlc(n)
+    index_ns = _synthetic_index(n)
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[5] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    test_start_idx = 100
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    fee = 0.0
+    configs = build_config_grid([0.1], [0.05], [0])
+
+    same = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days, entry_next_open=False)
+    next_ = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days, entry_next_open=True)
+
+    assert same["trades"] > 0
+    assert next_["trades"] > 0
+    assert abs(same["total_return"] - next_["total_return"]) > 0.001
+
+
+def test_entry_next_open_skips_last_candle_signal():
+    n = 200
+    open_ = np.full(n, 100.0, dtype=np.float64)
+    high = np.full(n, 105.0, dtype=np.float64)
+    low = np.full(n, 95.0, dtype=np.float64)
+    close = np.full(n, 100.0, dtype=np.float64)
+    index_ns = _synthetic_index(n)
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[n - 1] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    test_start_idx = 100
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    fee = 0.0
+    configs = build_config_grid([0.1], [0.05], [0])
+
+    result = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days, entry_next_open=True)
+    assert result["trades"] == 0
+
+
+def test_spread_slippage_reduces_return():
+    np.random.seed(42)
+    n = 200
+    open_, high, low, close = _synthetic_ohlc(n)
+    index_ns = _synthetic_index(n)
+    longs, shorts = _entries_all(n)
+    test_start_idx = 100
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    fee = 0.0
+    configs = build_config_grid([0.1], [0.05], [0])
+
+    base = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
+    with_cost = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days, spread_pct=0.001, slippage_pct=0.001)
+
+    if base["trades"] > 0:
+        assert with_cost["total_return"] < base["total_return"]
+
+
+def test_ambiguous_trades_detected():
+    n = 200
+    open_ = np.full(n, 100.0, dtype=np.float64)
+    high = np.full(n, 108.0, dtype=np.float64)
+    low = np.full(n, 92.0, dtype=np.float64)
+    close = np.full(n, 100.0, dtype=np.float64)
+    index_ns = _synthetic_index(n)
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[0] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    fee = 0.0
+    test_start_idx = 100
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    sl, tp = 0.05, 0.05
+    configs = build_config_grid([sl], [tp], [0])
+
+    result = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
+    assert result["ambiguous_trades"] > 0
+
+
+def test_ambiguous_trades_sl_prioritized():
+    n = 200
+    open_ = np.full(n, 100.0, dtype=np.float64)
+    high = np.full(n, 108.0, dtype=np.float64)
+    low = np.full(n, 92.0, dtype=np.float64)
+    close = np.full(n, 100.0, dtype=np.float64)
+    index_ns = _synthetic_index(n)
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[0] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    fee = 0.0
+    test_start_idx = 100
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    sl, tp = 0.05, 0.05
+    configs = build_config_grid([sl], [tp], [0])
+
+    result = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
+    entry = 100.0
+    sl_price = entry * (1.0 - sl)
+    expected_sl_return = (sl_price / entry - 1.0) * 100
+    assert abs(result["total_return"] - expected_sl_return) < 1e-9
+
+
+def test_default_same_open_preserved():
+    np.random.seed(42)
+    n = 200
+    open_, high, low, close = _synthetic_ohlc(n)
+    index_ns = _synthetic_index(n)
+    longs, shorts = _entries_all(n)
+    test_start_idx = 100
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    fee = 0.00035
+    sl, tp = 0.04, 0.02
+    max_hold = 0
+
+    old = _run_old_dense(open_, high, low, close, longs, shorts, sl, tp, max_hold, fee, test_start_idx, index_ns, days, test_days)
+    configs = build_config_grid([sl], [tp], [max_hold])
+    new = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
+    _assert_close(old, new, _DENSE_KEYS)
 
 
 def test_final_bar_forced_exit_dense():

@@ -43,6 +43,13 @@ const state = {
     min_trades_per_day: 0.33,
     min_test_trades_per_day: 0.33,
   },
+  executionSettings: {
+    entry_next_open: false,
+    use_spread_slippage: false,
+    spread_pct: 0,
+    slippage_pct: 0,
+    show_ambiguity_metrics: true,
+  },
   lastRunConfigSnapshot: null,
 };
 

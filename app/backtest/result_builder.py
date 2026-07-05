@@ -7,6 +7,24 @@ import numpy as np
 from app.backtest.metrics import score_candidate, score_dense_candidate
 
 
+def _compute_rr(tp: float, sl: float) -> float:
+    if sl <= 0:
+        return float("nan")
+    return tp / sl
+
+
+def _compute_realized_rr(avg_win: float, avg_loss: float) -> float:
+    if np.isnan(avg_win) or np.isnan(avg_loss) or avg_loss >= 0:
+        return float("nan")
+    return avg_win / abs(avg_loss)
+
+
+def _compute_ambiguous_rate(ambiguous_trades: int, trades: int) -> float:
+    if trades == 0:
+        return float("nan")
+    return ambiguous_trades / trades * 100.0
+
+
 def batch_to_normal_rows(
     sl_arr: np.ndarray,
     tp_arr: np.ndarray,
@@ -30,6 +48,7 @@ def batch_to_normal_rows(
     test_trades_per_day_arr: np.ndarray,
     test_max_gap_days_arr: np.ndarray,
     test_avg_bars_held_arr: np.ndarray,
+    ambiguous_trades_arr: np.ndarray,
     timeframe: str,
     strategy: str,
     params: str,
@@ -71,6 +90,9 @@ def batch_to_normal_rows(
         aw = avg_win_arr[c]
         al = avg_loss_arr[c]
         score = score_candidate(wr, total_ret, pf, exp, mdd, trades, test_wr, test_ret, test_pf, test_exp)
+        sl_val = float(sl_arr[c])
+        tp_val = float(tp_arr[c])
+        ambiguous_trades = int(ambiguous_trades_arr[c])
 
         rows.append(
             {
@@ -78,8 +100,8 @@ def batch_to_normal_rows(
                 "strategy": strategy,
                 "params": params,
                 "side_mode": side_mode,
-                "sl": float(sl_arr[c]),
-                "tp": float(tp_arr[c]),
+                "sl": sl_val,
+                "tp": tp_val,
                 "max_hold": int(max_hold_arr[c]),
                 "trades": trades,
                 "win_rate": wr,
@@ -89,6 +111,8 @@ def batch_to_normal_rows(
                 "max_drawdown": mdd,
                 "avg_win": aw,
                 "avg_loss": al,
+                "rr": _compute_rr(tp_val, sl_val),
+                "realized_rr": _compute_realized_rr(aw, al),
                 "trades_per_day": float(trades_per_day_arr[c]),
                 "max_gap_days": float(max_gap_days_arr[c]),
                 "avg_bars_held": float(avg_bars_held_arr[c]),
@@ -100,6 +124,8 @@ def batch_to_normal_rows(
                 "test_trades_per_day": float(test_trades_per_day_arr[c]),
                 "test_max_gap_days": float(test_max_gap_days_arr[c]),
                 "test_avg_bars_held": float(test_avg_bars_held_arr[c]),
+                "ambiguous_trades": ambiguous_trades,
+                "ambiguous_rate": _compute_ambiguous_rate(ambiguous_trades, trades),
                 "score": score,
             }
         )
@@ -129,6 +155,7 @@ def batch_to_dense_rows(
     test_trades_per_day_arr: np.ndarray,
     test_max_gap_days_arr: np.ndarray,
     test_avg_bars_held_arr: np.ndarray,
+    ambiguous_trades_arr: np.ndarray,
     timeframe: str,
     strategy: str,
     params: str,
@@ -184,6 +211,11 @@ def batch_to_dense_rows(
             "test_trades_per_day": test_tpd,
         }
         score = score_dense_candidate(score_row)
+        sl_val = float(sl_arr[c])
+        tp_val = float(tp_arr[c])
+        aw = avg_win_arr[c]
+        al = avg_loss_arr[c]
+        ambiguous_trades = int(ambiguous_trades_arr[c])
 
         rows.append(
             {
@@ -191,8 +223,8 @@ def batch_to_dense_rows(
                 "strategy": strategy,
                 "params": params,
                 "side_mode": side_mode,
-                "sl": float(sl_arr[c]),
-                "tp": float(tp_arr[c]),
+                "sl": sl_val,
+                "tp": tp_val,
                 "max_hold": int(max_hold_arr[c]),
                 "trades": trades,
                 "win_rate": wr,
@@ -200,8 +232,10 @@ def batch_to_dense_rows(
                 "profit_factor": pf,
                 "expectancy": exp,
                 "max_drawdown": mdd,
-                "avg_win": avg_win_arr[c],
-                "avg_loss": avg_loss_arr[c],
+                "avg_win": aw,
+                "avg_loss": al,
+                "rr": _compute_rr(tp_val, sl_val),
+                "realized_rr": _compute_realized_rr(aw, al),
                 "trades_per_day": tpd,
                 "max_gap_days": float(max_gap_days_arr[c]),
                 "avg_bars_held": float(avg_bars_held_arr[c]),
@@ -213,6 +247,8 @@ def batch_to_dense_rows(
                 "test_trades_per_day": test_tpd,
                 "test_max_gap_days": float(test_max_gap_days_arr[c]),
                 "test_avg_bars_held": float(test_avg_bars_held_arr[c]),
+                "ambiguous_trades": ambiguous_trades,
+                "ambiguous_rate": _compute_ambiguous_rate(ambiguous_trades, trades),
                 "score": score,
             }
         )

@@ -106,6 +106,10 @@ def evaluate_normal_timeframe(
     min_test_win_rate = search_params.get("min_test_win_rate", 48)
     min_profit_factor = search_params.get("min_profit_factor", 1.05)
     min_test_profit_factor = search_params.get("min_test_profit_factor", 1.0)
+    entry_next_open = search_params.get("entry_mode", "same_open") == "next_open"
+    use_spread_slippage = search_params.get("use_spread_slippage", False)
+    spread_pct_val = search_params.get("spread_pct", 0.0) if use_spread_slippage else 0.0
+    slippage_pct_val = search_params.get("slippage_pct", 0.0) if use_spread_slippage else 0.0
 
     rows: list[dict[str, Any]] = []
     for signal in signals:
@@ -121,10 +125,12 @@ def evaluate_normal_timeframe(
                 tpd_arr, mgd_arr, abh_arr,
                 ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
                 ttpd_arr, tmgd_arr, tabh_arr,
+                amb_arr,
             ) = simulate_many_configs_with_entries_summary(
                 open_, high, low, close, longs, shorts,
                 sl_arr, tp_arr, mh_arr, FEE_PER_SIDE,
                 test_start_idx, index_ns, days, test_days,
+                entry_next_open, spread_pct_val, slippage_pct_val,
             )
             rows.extend(
                 batch_to_normal_rows(
@@ -133,6 +139,7 @@ def evaluate_normal_timeframe(
                     tpd_arr, mgd_arr, abh_arr,
                     ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
                     ttpd_arr, tmgd_arr, tabh_arr,
+                    amb_arr,
                     timeframe, signal.strategy, signal.params, side_mode,
                     min_full_trades, min_test_trades, min_test_win_rate,
                     min_profit_factor, min_test_profit_factor,
@@ -171,6 +178,10 @@ def evaluate_dense_timeframe(
         signals = signals[: int(max_signal_variants)]
 
     sl_values, tp_values, max_holds = _grid(dense_grid_for_timeframe(timeframe), search_params)
+    entry_next_open = search_params.get("entry_mode", "same_open") == "next_open"
+    use_spread_slippage = search_params.get("use_spread_slippage", False)
+    spread_pct_val = search_params.get("spread_pct", 0.0) if use_spread_slippage else 0.0
+    slippage_pct_val = search_params.get("slippage_pct", 0.0) if use_spread_slippage else 0.0
 
     rows: list[dict[str, Any]] = []
     for signal in signals:
@@ -186,10 +197,12 @@ def evaluate_dense_timeframe(
                 tpd_arr, mgd_arr, abh_arr,
                 ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
                 ttpd_arr, tmgd_arr, tabh_arr,
+                amb_arr,
             ) = simulate_many_configs_with_entries_summary(
                 open_, high, low, close, longs, shorts,
                 sl_arr, tp_arr, mh_arr, FEE_PER_SIDE,
                 test_start_idx, index_ns, days, test_days,
+                entry_next_open, spread_pct_val, slippage_pct_val,
             )
             rows.extend(
                 batch_to_dense_rows(
@@ -198,6 +211,7 @@ def evaluate_dense_timeframe(
                     tpd_arr, mgd_arr, abh_arr,
                     ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
                     ttpd_arr, tmgd_arr, tabh_arr,
+                    amb_arr,
                     timeframe, signal.strategy, signal.params, side_mode,
                     min_trades, min_win_rate, min_test_trades, min_test_win_rate,
                 )

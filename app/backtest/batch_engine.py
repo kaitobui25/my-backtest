@@ -255,7 +255,11 @@ def simulate_many_configs_with_entries_summary(
     index_ns: np.ndarray,
     total_days: int,
     test_days: int,
+    entry_next_open: bool = False,
+    spread_pct: float = 0.0,
+    slippage_pct: float = 0.0,
 ) -> tuple[
+    np.ndarray,
     np.ndarray,
     np.ndarray,
     np.ndarray,
@@ -278,6 +282,7 @@ def simulate_many_configs_with_entries_summary(
 ]:
     num_configs = sl_arr.shape[0]
     n = open_.shape[0]
+    extra_cost = spread_pct + slippage_pct
 
     trades_arr = np.zeros(num_configs, dtype=np.int64)
     win_rate_arr = np.full(num_configs, np.nan, dtype=np.float64)
@@ -298,6 +303,7 @@ def simulate_many_configs_with_entries_summary(
     test_trades_per_day_arr = np.zeros(num_configs, dtype=np.float64)
     test_max_gap_days_arr = np.full(num_configs, np.inf, dtype=np.float64)
     test_avg_bars_held_arr = np.full(num_configs, np.nan, dtype=np.float64)
+    ambiguous_trades_arr = np.zeros(num_configs, dtype=np.int64)
 
     returns_buf = np.empty(n, dtype=np.float64)
     entries_buf = np.empty(n, dtype=np.int64)
@@ -320,8 +326,17 @@ def simulate_many_configs_with_entries_summary(
         direction = 0
         entry = 0.0
         entry_i = 0
+        pending_direction = 0
+        ambiguous_trades = 0
 
         for i in range(n):
+            if not in_pos and pending_direction != 0:
+                in_pos = True
+                direction = pending_direction
+                entry = open_[i]
+                entry_i = i
+                pending_direction = 0
+
             if in_pos:
                 held = i - entry_i
                 should_time_exit = max_hold > 0 and held >= max_hold
@@ -330,6 +345,8 @@ def simulate_many_configs_with_entries_summary(
                     tp_price = entry * (1.0 + tp)
                     hit_sl = low[i] <= sl_price
                     hit_tp = high[i] >= tp_price
+                    if hit_sl and hit_tp:
+                        ambiguous_trades += 1
                     if hit_sl or hit_tp or should_time_exit:
                         if hit_sl:
                             exit_price = sl_price
@@ -337,7 +354,7 @@ def simulate_many_configs_with_entries_summary(
                             exit_price = tp_price
                         else:
                             exit_price = close[i]
-                        returns_buf[count] = (exit_price / entry - 1.0) - 2.0 * fee_per_side
+                        returns_buf[count] = (exit_price / entry - 1.0) - 2.0 * fee_per_side - extra_cost
                         entries_buf[count] = entry_i
                         exits_buf[count] = i
                         bars_buf[count] = held
@@ -348,6 +365,8 @@ def simulate_many_configs_with_entries_summary(
                     tp_price = entry * (1.0 - tp)
                     hit_sl = high[i] >= sl_price
                     hit_tp = low[i] <= tp_price
+                    if hit_sl and hit_tp:
+                        ambiguous_trades += 1
                     if hit_sl or hit_tp or should_time_exit:
                         if hit_sl:
                             exit_price = sl_price
@@ -355,64 +374,76 @@ def simulate_many_configs_with_entries_summary(
                             exit_price = tp_price
                         else:
                             exit_price = close[i]
-                        returns_buf[count] = (entry / exit_price - 1.0) - 2.0 * fee_per_side
+                        returns_buf[count] = (entry / exit_price - 1.0) - 2.0 * fee_per_side - extra_cost
                         entries_buf[count] = entry_i
                         exits_buf[count] = i
                         bars_buf[count] = held
                         count += 1
                         in_pos = False
 
-            if not in_pos:
+            if not in_pos and pending_direction == 0:
                 if long_entries[i]:
-                    in_pos = True
-                    direction = 1
-                    entry = open_[i]
-                    entry_i = i
-                    sl_price = entry * (1.0 - sl)
-                    tp_price = entry * (1.0 + tp)
-                    hit_sl = low[i] <= sl_price
-                    hit_tp = high[i] >= tp_price
-                    if hit_sl or hit_tp:
-                        if hit_sl:
-                            exit_price = sl_price
-                        else:
-                            exit_price = tp_price
-                        returns_buf[count] = (exit_price / entry - 1.0) - 2.0 * fee_per_side
-                        entries_buf[count] = entry_i
-                        exits_buf[count] = i
-                        bars_buf[count] = 0
-                        count += 1
-                        in_pos = False
+                    if entry_next_open:
+                        pending_direction = 1
+                    else:
+                        in_pos = True
+                        direction = 1
+                        entry = open_[i]
+                        entry_i = i
+                        sl_price = entry * (1.0 - sl)
+                        tp_price = entry * (1.0 + tp)
+                        hit_sl = low[i] <= sl_price
+                        hit_tp = high[i] >= tp_price
+                        if hit_sl and hit_tp:
+                            ambiguous_trades += 1
+                        if hit_sl or hit_tp:
+                            if hit_sl:
+                                exit_price = sl_price
+                            else:
+                                exit_price = tp_price
+                            returns_buf[count] = (exit_price / entry - 1.0) - 2.0 * fee_per_side - extra_cost
+                            entries_buf[count] = entry_i
+                            exits_buf[count] = i
+                            bars_buf[count] = 0
+                            count += 1
+                            in_pos = False
                 elif short_entries[i]:
-                    in_pos = True
-                    direction = -1
-                    entry = open_[i]
-                    entry_i = i
-                    sl_price = entry * (1.0 + sl)
-                    tp_price = entry * (1.0 - tp)
-                    hit_sl = high[i] >= sl_price
-                    hit_tp = low[i] <= tp_price
-                    if hit_sl or hit_tp:
-                        if hit_sl:
-                            exit_price = sl_price
-                        else:
-                            exit_price = tp_price
-                        returns_buf[count] = (entry / exit_price - 1.0) - 2.0 * fee_per_side
-                        entries_buf[count] = entry_i
-                        exits_buf[count] = i
-                        bars_buf[count] = 0
-                        count += 1
-                        in_pos = False
+                    if entry_next_open:
+                        pending_direction = -1
+                    else:
+                        in_pos = True
+                        direction = -1
+                        entry = open_[i]
+                        entry_i = i
+                        sl_price = entry * (1.0 + sl)
+                        tp_price = entry * (1.0 - tp)
+                        hit_sl = high[i] >= sl_price
+                        hit_tp = low[i] <= tp_price
+                        if hit_sl and hit_tp:
+                            ambiguous_trades += 1
+                        if hit_sl or hit_tp:
+                            if hit_sl:
+                                exit_price = sl_price
+                            else:
+                                exit_price = tp_price
+                            returns_buf[count] = (entry / exit_price - 1.0) - 2.0 * fee_per_side - extra_cost
+                            entries_buf[count] = entry_i
+                            exits_buf[count] = i
+                            bars_buf[count] = 0
+                            count += 1
+                            in_pos = False
 
         if in_pos:
             if direction == 1:
-                returns_buf[count] = (close[n - 1] / entry - 1.0) - 2.0 * fee_per_side
+                returns_buf[count] = (close[n - 1] / entry - 1.0) - 2.0 * fee_per_side - extra_cost
             else:
-                returns_buf[count] = (entry / close[n - 1] - 1.0) - 2.0 * fee_per_side
+                returns_buf[count] = (entry / close[n - 1] - 1.0) - 2.0 * fee_per_side - extra_cost
             entries_buf[count] = entry_i
             exits_buf[count] = n - 1
             bars_buf[count] = n - 1 - entry_i
             count += 1
+
+        ambiguous_trades_arr[c] = ambiguous_trades
 
         if count == 0:
             continue
@@ -486,4 +517,5 @@ def simulate_many_configs_with_entries_summary(
         test_trades_per_day_arr,
         test_max_gap_days_arr,
         test_avg_bars_held_arr,
+        ambiguous_trades_arr,
     )
