@@ -18,6 +18,15 @@ async function init() {
   }
 }
 
+function isConfigLocked() {
+  return state.loading;
+}
+
+function cloneConfig(obj) {
+  if (typeof structuredClone === "function") return structuredClone(obj);
+  return JSON.parse(JSON.stringify(obj));
+}
+
 function renderAll() {
   renderTimeframes();
   renderStrategies();
@@ -27,6 +36,7 @@ function renderAll() {
   renderSearchGrid();
   renderExecutionSettings();
   renderRiskSettings();
+  renderRunningConfig();
   updateApplyStatusBadges();
   updateRunButton();
 }
@@ -300,6 +310,7 @@ function renderSearchGrid() {
     el.innerHTML = "";
     return;
   }
+  const locked = isConfigLocked();
   const gs = state.gridSettings;
   const ds = state.densitySettings;
   const trackable = hasTrackableResult();
@@ -307,30 +318,30 @@ function renderSearchGrid() {
   el.innerHTML = `
     <div class="grid-row${dirty("gridProfile")}">
       <label>Profile</label>
-      <select id="grid-profile">
+      <select id="grid-profile" ${locked ? "disabled" : ""}>
         <option value="dense" ${gs.profile === "dense" ? "selected" : ""}>Dense</option>
         <option value="normal" ${gs.profile === "normal" ? "selected" : ""}>Normal</option>
       </select>
     </div>
     <div class="grid-row${dirty("gridSl")}">
       <label>SL values</label>
-      <input type="text" id="grid-sl" value="${gs.sl_values}" placeholder="e.g. 0.02, 0.04, 0.06">
+      <input type="text" id="grid-sl" value="${gs.sl_values}" placeholder="e.g. 0.02, 0.04, 0.06" ${locked ? "disabled" : ""}>
     </div>
     <div class="grid-row${dirty("gridTp")}">
       <label>TP values</label>
-      <input type="text" id="grid-tp" value="${gs.tp_values}" placeholder="e.g. 0.005, 0.01, 0.02">
+      <input type="text" id="grid-tp" value="${gs.tp_values}" placeholder="e.g. 0.005, 0.01, 0.02" ${locked ? "disabled" : ""}>
     </div>
     <div class="grid-row${dirty("gridMh")}">
       <label>Max Hold</label>
-      <input type="text" id="grid-max-hold" value="${gs.max_holds}" placeholder="e.g. 16, 32, 64">
+      <input type="text" id="grid-max-hold" value="${gs.max_holds}" placeholder="e.g. 16, 32, 64" ${locked ? "disabled" : ""}>
     </div>
     <div class="grid-row${dirty("gridMtpd")}">
       <label>Min trades/day</label>
-      <input type="number" id="grid-mtpd" value="${ds.min_trades_per_day}" min="0.1" max="5" step="0.01">
+      <input type="number" id="grid-mtpd" value="${ds.min_trades_per_day}" min="0.1" max="5" step="0.01" ${locked ? "disabled" : ""}>
     </div>
     <div class="grid-row${dirty("gridMttpd")}">
       <label>Min test trades/day</label>
-      <input type="number" id="grid-mttpd" value="${ds.min_test_trades_per_day}" min="0.1" max="5" step="0.01">
+      <input type="number" id="grid-mttpd" value="${ds.min_test_trades_per_day}" min="0.1" max="5" step="0.01" ${locked ? "disabled" : ""}>
     </div>
   `;
 }
@@ -338,27 +349,28 @@ function renderSearchGrid() {
 function renderExecutionSettings() {
   const el = document.getElementById("execution-settings");
   const es = state.executionSettings;
+  const locked = isConfigLocked();
   el.innerHTML = `
     <div class="exec-row">
       <label class="exec-checkbox">
-        <input type="checkbox" id="exec-entry-next" ${es.entry_next_open ? "checked" : ""}>
+        <input type="checkbox" id="exec-entry-next" ${es.entry_next_open ? "checked" : ""} ${locked ? "disabled" : ""}>
         Entry next open
       </label>
     </div>
     <div class="exec-row">
       <label class="exec-checkbox">
-        <input type="checkbox" id="exec-use-spread" ${es.use_spread_slippage ? "checked" : ""}>
+        <input type="checkbox" id="exec-use-spread" ${es.use_spread_slippage ? "checked" : ""} ${locked ? "disabled" : ""}>
         Use spread/slippage
       </label>
     </div>
     <div class="exec-sub ${es.use_spread_slippage ? "" : "exec-disabled"}">
       <div class="exec-row">
         <label>Spread %</label>
-        <input type="number" id="exec-spread-pct" value="${es.spread_pct}" min="0" max="0.1" step="0.0001" ${es.use_spread_slippage ? "" : "disabled"}>
+        <input type="number" id="exec-spread-pct" value="${es.spread_pct}" min="0" max="0.1" step="0.0001" ${es.use_spread_slippage ? "" : "disabled"} ${locked ? "disabled" : ""}>
       </div>
       <div class="exec-row">
         <label>Slippage %</label>
-        <input type="number" id="exec-slippage-pct" value="${es.slippage_pct}" min="0" max="0.1" step="0.0001" ${es.use_spread_slippage ? "" : "disabled"}>
+        <input type="number" id="exec-slippage-pct" value="${es.slippage_pct}" min="0" max="0.1" step="0.0001" ${es.use_spread_slippage ? "" : "disabled"} ${locked ? "disabled" : ""}>
       </div>
     </div>
   `;
@@ -367,6 +379,7 @@ function renderExecutionSettings() {
 function renderRiskSettings() {
   const el = document.getElementById("risk-settings");
   const rs = state.riskSettings;
+  const locked = isConfigLocked();
   const trackable = hasTrackableResult();
   const dirtyRow = (key) => trackable && isConfigKeyChanged(key) ? " config-dirty" : "";
   const anyDirty = trackable && (
@@ -384,41 +397,98 @@ function renderRiskSettings() {
   el.innerHTML = `
     <div class="risk-row${dirtyRow("usePositionSizing")}">
       <label class="risk-checkbox">
-        <input type="checkbox" id="risk-use-sizing" ${rs.use_position_sizing ? "checked" : ""}>
+        <input type="checkbox" id="risk-use-sizing" ${rs.use_position_sizing ? "checked" : ""} ${locked ? "disabled" : ""}>
         Position sizing
       </label>
     </div>
     <div class="risk-sub ${rs.use_position_sizing ? "" : "risk-disabled"}">
       <div class="risk-row${dirtyRow("riskPerTradePct")}">
         <label>Risk % per trade</label>
-        <input type="number" id="risk-per-trade" value="${rs.risk_per_trade_pct}" min="0.1" max="10" step="0.1" ${rs.use_position_sizing ? "" : "disabled"}>
+        <input type="number" id="risk-per-trade" value="${rs.risk_per_trade_pct}" min="0.1" max="10" step="0.1" ${rs.use_position_sizing ? "" : "disabled"} ${locked ? "disabled" : ""}>
       </div>
     </div>
     <div class="risk-row${dirtyRow("useLeverage")}">
       <label class="risk-checkbox">
-        <input type="checkbox" id="risk-use-leverage" ${rs.use_leverage ? "checked" : ""}>
+        <input type="checkbox" id="risk-use-leverage" ${rs.use_leverage ? "checked" : ""} ${locked ? "disabled" : ""}>
         Use leverage
       </label>
     </div>
     <div class="risk-sub ${rs.use_leverage ? "" : "risk-disabled"}">
       <div class="risk-row${dirtyRow("leverage")}">
         <label>Leverage</label>
-        <input type="number" id="risk-leverage" value="${rs.leverage}" min="1" max="125" step="1" ${rs.use_leverage ? "" : "disabled"}>
+        <input type="number" id="risk-leverage" value="${rs.leverage}" min="1" max="125" step="1" ${rs.use_leverage ? "" : "disabled"} ${locked ? "disabled" : ""}>
       </div>
     </div>
     <div class="risk-row${dirtyRow("useLiquidation")}">
       <label class="risk-checkbox">
-        <input type="checkbox" id="risk-use-liq" ${rs.use_liquidation ? "checked" : ""}>
+        <input type="checkbox" id="risk-use-liq" ${rs.use_liquidation ? "checked" : ""} ${locked ? "disabled" : ""}>
         Liquidation
       </label>
     </div>
     <div class="risk-sub ${rs.use_liquidation ? "" : "risk-disabled"}">
       <div class="risk-row${dirtyRow("maintenanceMarginPct")}">
         <label>Maint. margin %</label>
-        <input type="number" id="risk-mm" value="${rs.maintenance_margin_pct}" min="0.01" max="1" step="0.01" ${rs.use_liquidation ? "" : "disabled"}>
+        <input type="number" id="risk-mm" value="${rs.maintenance_margin_pct}" min="0.01" max="1" step="0.01" ${rs.use_liquidation ? "" : "disabled"} ${locked ? "disabled" : ""}>
       </div>
     </div>
   `;
+}
+
+function renderRunningConfig() {
+  const el = document.getElementById("running-config-view");
+  const snap = state.runningConfigSnapshot;
+  if (!snap) {
+    el.innerHTML = '<div class="config-empty">No active backtest config yet</div>';
+    return;
+  }
+  let html = '<div class="config-section"><div class="config-section-title">Basic</div>';
+  html += '<div class="config-row"><span class="config-label">Symbol</span><span class="config-value">' + snap.symbol + '</span></div>';
+  html += '<div class="config-row"><span class="config-label">Mode</span><span class="config-value">' + snap.mode + '</span></div>';
+  html += '<div class="config-row"><span class="config-label">Timeframes</span><span class="config-value">' + ((snap.timeframes || []).join(", ")) + '</span></div>';
+  html += '<div class="config-row"><span class="config-label">Strategies</span><span class="config-value">' + (snap.strategies ? snap.strategies.join(", ") : "all") + '</span></div>';
+  html += '</div>';
+  const filters = snap.filters;
+  if (filters && filters.length > 0) {
+    html += '<div class="config-section"><div class="config-section-title">Result Filters</div>';
+    filters.forEach(function(f) {
+      html += '<div class="config-row"><span class="config-label">' + f.field + " " + f.op + '</span><span class="config-value">' + f.value + '</span></div>';
+    });
+    html += '</div>';
+  }
+  const sp = snap.search_params;
+  if (sp) {
+    html += '<div class="config-section"><div class="config-section-title">Search Grid</div>';
+    html += '<div class="config-row"><span class="config-label">Profile</span><span class="config-value">' + (sp.grid_profile || "dense") + '</span></div>';
+    if (sp.sl_values) html += '<div class="config-row"><span class="config-label">SL values</span><span class="config-value">' + (Array.isArray(sp.sl_values) ? sp.sl_values.join(", ") : sp.sl_values) + '</span></div>';
+    if (sp.tp_values) html += '<div class="config-row"><span class="config-label">TP values</span><span class="config-value">' + (Array.isArray(sp.tp_values) ? sp.tp_values.join(", ") : sp.tp_values) + '</span></div>';
+    if (sp.max_holds) html += '<div class="config-row"><span class="config-label">Max holds</span><span class="config-value">' + (Array.isArray(sp.max_holds) ? sp.max_holds.join(", ") : sp.max_holds) + '</span></div>';
+    if (sp.min_trades_per_day != null) html += '<div class="config-row"><span class="config-label">Min trades/day</span><span class="config-value">' + sp.min_trades_per_day + '</span></div>';
+    if (sp.min_test_trades_per_day != null) html += '<div class="config-row"><span class="config-label">Min test trades/day</span><span class="config-value">' + sp.min_test_trades_per_day + '</span></div>';
+    html += '</div>';
+    html += '<div class="config-section"><div class="config-section-title">Execution</div>';
+    html += '<div class="config-row"><span class="config-label">Entry mode</span><span class="config-value">' + (sp.entry_mode || "same_open") + '</span></div>';
+    html += '<div class="config-row"><span class="config-label">Spread/slippage</span><span class="config-value">' + (sp.use_spread_slippage ? "yes" : "no") + '</span></div>';
+    if (sp.use_spread_slippage) {
+      html += '<div class="config-row"><span class="config-label">Spread %</span><span class="config-value">' + (sp.spread_pct != null ? sp.spread_pct : 0) + '</span></div>';
+      html += '<div class="config-row"><span class="config-label">Slippage %</span><span class="config-value">' + (sp.slippage_pct != null ? sp.slippage_pct : 0) + '</span></div>';
+    }
+    html += '</div>';
+    html += '<div class="config-section"><div class="config-section-title">Risk / Leverage</div>';
+    html += '<div class="config-row"><span class="config-label">Position sizing</span><span class="config-value">' + (sp.use_position_sizing ? "yes" : "no") + '</span></div>';
+    if (sp.use_position_sizing) {
+      html += '<div class="config-row"><span class="config-label">Risk % per trade</span><span class="config-value">' + (sp.risk_per_trade_pct != null ? sp.risk_per_trade_pct : 1.0) + '</span></div>';
+    }
+    html += '<div class="config-row"><span class="config-label">Use leverage</span><span class="config-value">' + (sp.use_leverage ? "yes" : "no") + '</span></div>';
+    if (sp.use_leverage) {
+      html += '<div class="config-row"><span class="config-label">Leverage</span><span class="config-value">' + (sp.leverage != null ? sp.leverage : 1) + '</span></div>';
+    }
+    html += '<div class="config-row"><span class="config-label">Liquidation</span><span class="config-value">' + (sp.use_liquidation ? "yes" : "no") + '</span></div>';
+    if (sp.use_liquidation) {
+      html += '<div class="config-row"><span class="config-label">Maint. margin %</span><span class="config-value">' + (sp.maintenance_margin_pct != null ? sp.maintenance_margin_pct : 0.5) + '</span></div>';
+    }
+    html += '</div>';
+  }
+  el.innerHTML = html;
 }
 
 function dirtyTrack(key) {
@@ -659,6 +729,9 @@ async function handleRun() {
 
   hideError();
   setState({ loading: true });
+  renderSearchGrid();
+  renderExecutionSettings();
+  renderRiskSettings();
   updateApplyStatusBadges();
   updateRunButton();
   startTimer();
@@ -674,13 +747,16 @@ async function handleRun() {
 
     const payload = {
       symbol: "BTCUSD",
-      timeframes: state.selectedTimeframes,
+      timeframes: [...state.selectedTimeframes],
       mode: state.mode,
-      strategies: state.selectedStrategies.length > 0 ? state.selectedStrategies : null,
+      strategies: state.selectedStrategies.length > 0 ? [...state.selectedStrategies] : null,
       filters,
       limit: 500,
       search_params: buildSearchParams(),
     };
+
+    state.runningConfigSnapshot = cloneConfig(payload);
+    renderRunningConfig();
 
     const result = await runBacktestAPI(payload, controller.signal);
     state.columns = result.columns;
@@ -705,6 +781,9 @@ async function handleRun() {
   } finally {
     clearTimeout(timeoutId);
     setState({ loading: false });
+    renderSearchGrid();
+    renderExecutionSettings();
+    renderRiskSettings();
     updateApplyStatusBadges();
     updateRunButton();
     stopTimer();
@@ -817,6 +896,7 @@ function bindEvents() {
   });
 
   document.getElementById("search-grid").addEventListener("change", e => {
+    if (isConfigLocked()) return;
     const target = e.target;
     if (target.id === "grid-profile") {
       state.gridSettings.profile = target.value;
@@ -828,6 +908,7 @@ function bindEvents() {
   });
 
   document.getElementById("search-grid").addEventListener("input", e => {
+    if (isConfigLocked()) return;
     const target = e.target;
     const row = target.closest(".grid-row");
     const setDirty = (key) => {
@@ -848,6 +929,7 @@ function bindEvents() {
   });
 
   document.getElementById("execution-settings").addEventListener("change", e => {
+    if (isConfigLocked()) return;
     const target = e.target;
     if (target.id === "exec-entry-next") {
       state.executionSettings.entry_next_open = target.checked;
@@ -862,6 +944,7 @@ function bindEvents() {
   });
 
   document.getElementById("execution-settings").addEventListener("input", e => {
+    if (isConfigLocked()) return;
     const target = e.target;
     if (target.id === "exec-spread-pct") {
       state.executionSettings.spread_pct = target.value;
@@ -876,6 +959,7 @@ function bindEvents() {
   });
 
   document.getElementById("risk-settings").addEventListener("change", e => {
+    if (isConfigLocked()) return;
     const target = e.target;
     if (target.id === "risk-use-sizing") {
       state.riskSettings.use_position_sizing = target.checked;
@@ -904,6 +988,7 @@ function bindEvents() {
   });
 
   document.getElementById("risk-settings").addEventListener("input", e => {
+    if (isConfigLocked()) return;
     const target = e.target;
     if (target.id === "risk-per-trade") {
       state.riskSettings.risk_per_trade_pct = Number(target.value);
@@ -1038,6 +1123,20 @@ async function handleLoadSavedRun(runId) {
       state.riskSettings.leverage = sp.leverage ?? 1;
       state.riskSettings.use_liquidation = sp.use_liquidation === true;
       state.riskSettings.maintenance_margin_pct = sp.maintenance_margin_pct ?? 0.5;
+    }
+
+    if (sp) {
+      state.runningConfigSnapshot = {
+        symbol: meta.symbol || "BTCUSD",
+        timeframes: meta.timeframes || [],
+        mode: meta.mode || "normal",
+        strategies: meta.strategies && meta.strategies.length > 0 ? meta.strategies : null,
+        filters: meta.filters || [],
+        limit: 500,
+        search_params: sp,
+      };
+    } else {
+      state.runningConfigSnapshot = null;
     }
 
     const savedStrats = Object.keys(state.strategySettings);

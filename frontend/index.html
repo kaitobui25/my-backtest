@@ -32,6 +32,14 @@
           <div id="selected-strategies" class="selected-items"></div>
         </div>
         <button class="btn-clear" id="btn-clear-selected">Clear All</button>
+        <div class="panel-section">
+          <div class="panel-subtitle">Execution <span class="apply-status" id="execution-apply-status"></span></div>
+          <div id="execution-settings"></div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-subtitle">Risk / Leverage <span class="apply-status" id="risk-apply-status"></span></div>
+          <div id="risk-settings"></div>
+        </div>
       </div>
     </div>
     <div class="panel" id="panel-filters">
@@ -47,14 +55,10 @@
         <div class="panel-subtitle">Search Grid <span class="apply-status" id="grid-apply-status"></span></div>
         <div id="search-grid"></div>
       </div>
-      <div class="panel-section">
-        <div class="panel-subtitle">Execution <span class="apply-status" id="execution-apply-status"></span></div>
-        <div id="execution-settings"></div>
-      </div>
-      <div class="panel-section">
-        <div class="panel-subtitle">Risk / Leverage <span class="apply-status" id="risk-apply-status"></span></div>
-        <div id="risk-settings"></div>
-      </div>
+    </div>
+    <div class="panel" id="panel-running-config">
+      <div class="panel-title">Active Backtest Config</div>
+      <div class="panel-body" id="running-config-view"></div>
     </div>
   </div>
 

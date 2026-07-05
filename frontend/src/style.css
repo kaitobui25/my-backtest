@@ -17,7 +17,7 @@ body {
 
 #top-bar {
   display: grid;
-  grid-template-columns: 120px 2fr 1.5fr 1.8fr;
+  grid-template-columns: 120px 2fr 1.8fr 1.5fr 2fr;
   gap: 8px;
 }
 
@@ -701,4 +701,45 @@ body {
 }
 .apply-status.changed {
   color: #c9302c;
+}
+
+#running-config-view {
+  padding: 4px 8px;
+  font-size: 11px;
+  overflow-y: auto;
+  min-height: 40px;
+}
+.config-empty {
+  color: #999;
+  font-size: 11px;
+  padding: 8px;
+  text-align: center;
+}
+.config-section {
+  margin-bottom: 6px;
+}
+.config-section-title {
+  font-weight: 600;
+  font-size: 10px;
+  color: #555;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 2px;
+}
+.config-row {
+  display: flex;
+  padding: 1px 0;
+  line-height: 1.4;
+}
+.config-label {
+  flex-shrink: 0;
+  min-width: 90px;
+  color: #666;
+  font-size: 10px;
+}
+.config-value {
+  color: #333;
+  font-size: 10px;
+  word-break: break-all;
 }

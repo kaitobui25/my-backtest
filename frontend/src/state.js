@@ -59,6 +59,7 @@ const state = {
     maintenance_margin_pct: 0.5,
   },
   lastRunConfigSnapshot: null,
+  runningConfigSnapshot: null,
 };
 
 function setState(updates) {
