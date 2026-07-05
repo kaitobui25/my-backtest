@@ -52,6 +52,10 @@ FILTER_FIELDS = [
     "test_avg_bars_held",
     "ambiguous_trades",
     "ambiguous_rate",
+    "equity_total_return",
+    "equity_max_drawdown",
+    "final_equity",
+    "liquidated_trades",
     "score",
 ]
 OPERATORS = [">", ">=", "<", "<=", "=", "~"]

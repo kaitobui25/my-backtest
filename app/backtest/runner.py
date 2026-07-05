@@ -110,6 +110,12 @@ def evaluate_normal_timeframe(
     use_spread_slippage = search_params.get("use_spread_slippage", False)
     spread_pct_val = search_params.get("spread_pct", 0.0) if use_spread_slippage else 0.0
     slippage_pct_val = search_params.get("slippage_pct", 0.0) if use_spread_slippage else 0.0
+    use_position_sizing = search_params.get("use_position_sizing", False)
+    risk_per_trade_pct = search_params.get("risk_per_trade_pct", 1.0)
+    use_leverage = search_params.get("use_leverage", False)
+    leverage_val = search_params.get("leverage", 1.0)
+    use_liquidation = search_params.get("use_liquidation", False)
+    maintenance_margin_pct = search_params.get("maintenance_margin_pct", 0.5)
 
     rows: list[dict[str, Any]] = []
     for signal in signals:
@@ -126,11 +132,15 @@ def evaluate_normal_timeframe(
                 ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
                 ttpd_arr, tmgd_arr, tabh_arr,
                 amb_arr,
+                eq_tr_arr, eq_mdd_arr, fin_eq_arr, liq_arr,
             ) = simulate_many_configs_with_entries_summary(
                 open_, high, low, close, longs, shorts,
                 sl_arr, tp_arr, mh_arr, FEE_PER_SIDE,
                 test_start_idx, index_ns, days, test_days,
                 entry_next_open, spread_pct_val, slippage_pct_val,
+                use_position_sizing, risk_per_trade_pct,
+                use_leverage, leverage_val,
+                use_liquidation, maintenance_margin_pct,
             )
             rows.extend(
                 batch_to_normal_rows(
@@ -140,6 +150,7 @@ def evaluate_normal_timeframe(
                     ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
                     ttpd_arr, tmgd_arr, tabh_arr,
                     amb_arr,
+                    eq_tr_arr, eq_mdd_arr, fin_eq_arr, liq_arr,
                     timeframe, signal.strategy, signal.params, side_mode,
                     min_full_trades, min_test_trades, min_test_win_rate,
                     min_profit_factor, min_test_profit_factor,
@@ -182,6 +193,12 @@ def evaluate_dense_timeframe(
     use_spread_slippage = search_params.get("use_spread_slippage", False)
     spread_pct_val = search_params.get("spread_pct", 0.0) if use_spread_slippage else 0.0
     slippage_pct_val = search_params.get("slippage_pct", 0.0) if use_spread_slippage else 0.0
+    use_position_sizing = search_params.get("use_position_sizing", False)
+    risk_per_trade_pct = search_params.get("risk_per_trade_pct", 1.0)
+    use_leverage = search_params.get("use_leverage", False)
+    leverage_val = search_params.get("leverage", 1.0)
+    use_liquidation = search_params.get("use_liquidation", False)
+    maintenance_margin_pct = search_params.get("maintenance_margin_pct", 0.5)
 
     rows: list[dict[str, Any]] = []
     for signal in signals:
@@ -198,11 +215,15 @@ def evaluate_dense_timeframe(
                 ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
                 ttpd_arr, tmgd_arr, tabh_arr,
                 amb_arr,
+                eq_tr_arr, eq_mdd_arr, fin_eq_arr, liq_arr,
             ) = simulate_many_configs_with_entries_summary(
                 open_, high, low, close, longs, shorts,
                 sl_arr, tp_arr, mh_arr, FEE_PER_SIDE,
                 test_start_idx, index_ns, days, test_days,
                 entry_next_open, spread_pct_val, slippage_pct_val,
+                use_position_sizing, risk_per_trade_pct,
+                use_leverage, leverage_val,
+                use_liquidation, maintenance_margin_pct,
             )
             rows.extend(
                 batch_to_dense_rows(
@@ -212,6 +233,7 @@ def evaluate_dense_timeframe(
                     ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
                     ttpd_arr, tmgd_arr, tabh_arr,
                     amb_arr,
+                    eq_tr_arr, eq_mdd_arr, fin_eq_arr, liq_arr,
                     timeframe, signal.strategy, signal.params, side_mode,
                     min_trades, min_win_rate, min_test_trades, min_test_win_rate,
                 )

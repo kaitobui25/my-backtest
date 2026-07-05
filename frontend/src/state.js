@@ -50,6 +50,14 @@ const state = {
     slippage_pct: 0,
     show_ambiguity_metrics: true,
   },
+  riskSettings: {
+    use_position_sizing: false,
+    risk_per_trade_pct: 1.0,
+    use_leverage: false,
+    leverage: 1,
+    use_liquidation: false,
+    maintenance_margin_pct: 0.5,
+  },
   lastRunConfigSnapshot: null,
 };
 

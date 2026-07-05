@@ -612,3 +612,82 @@ body {
   background: #6ea8fe;
   color: #fff;
 }
+
+.risk-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.risk-row > label {
+  flex-shrink: 0;
+  min-width: 70px;
+  color: #555;
+}
+.risk-row input[type="number"] {
+  width: 70px;
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid #bbb;
+  border-radius: 2px;
+}
+.risk-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+  color: #333;
+}
+.risk-sub {
+  padding-left: 8px;
+}
+.risk-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.risk-row.config-dirty {
+  background: #ffe6ea !important;
+  border-color: #f3a6b3 !important;
+}
+.risk-row.config-dirty input {
+  background: #ffe6ea !important;
+  border-color: #f3a6b3 !important;
+}
+
+.panel.config-dirty > .panel-title::after {
+  content: " (changed)";
+  font-size: 10px;
+  color: #c00;
+  font-weight: normal;
+}
+.panel-section.config-dirty > .panel-subtitle::after {
+  content: " (changed)";
+  font-size: 10px;
+  color: #c00;
+  font-weight: normal;
+}
+.grid-row.config-dirty > label::after,
+.risk-row.config-dirty > label::after,
+.setting-row.config-dirty > label::after,
+.filter-row.config-dirty::after {
+  content: " (changed)";
+  font-size: 9px;
+  color: #c00;
+  font-weight: normal;
+  margin-left: 2px;
+}
+
+.filter-star {
+  cursor: pointer;
+  font-size: 13px;
+  color: #bbb;
+  user-select: none;
+  width: 16px;
+  text-align: center;
+}
+.filter-star.fav {
+  color: #e6a817;
+}

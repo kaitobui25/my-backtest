@@ -175,7 +175,7 @@ def _batched_normal_result(open_, high, low, close, longs, shorts, configs, fee,
     }
 
 
-def _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start, index_ns, days, test_days, entry_next_open=False, spread_pct=0.0, slippage_pct=0.0):
+def _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start, index_ns, days, test_days, entry_next_open=False, spread_pct=0.0, slippage_pct=0.0, use_position_sizing=False, risk_per_trade_pct=1.0, use_leverage=False, leverage=1.0, use_liquidation=False, maintenance_margin_pct=0.5):
     sl_arr, tp_arr, mh_arr = configs
     (
         tr, wr, tre, pf, exp, mdd, aw, al,
@@ -183,7 +183,8 @@ def _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, 
         ttr, twr, tre2, tpf, texp,
         ttpd_a, tmgd_a, tabh_a,
         amb_a,
-    ) = simulate_many_configs_with_entries_summary(open_, high, low, close, longs, shorts, sl_arr, tp_arr, mh_arr, fee, test_start, index_ns, days, test_days, entry_next_open, spread_pct, slippage_pct)
+        eq_tr_a, eq_mdd_a, fin_eq_a, liq_a,
+    ) = simulate_many_configs_with_entries_summary(open_, high, low, close, longs, shorts, sl_arr, tp_arr, mh_arr, fee, test_start, index_ns, days, test_days, entry_next_open, spread_pct, slippage_pct, use_position_sizing, risk_per_trade_pct, use_leverage, leverage, use_liquidation, maintenance_margin_pct)
     return {
         "trades": tr[0],
         "win_rate": wr[0],
@@ -205,6 +206,10 @@ def _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, 
         "test_max_gap_days": tmgd_a[0],
         "test_avg_bars_held": tabh_a[0],
         "ambiguous_trades": int(amb_a[0]),
+        "equity_total_return": float(eq_tr_a[0]) if not np.isnan(eq_tr_a[0]) else float("nan"),
+        "equity_max_drawdown": float(eq_mdd_a[0]) if not np.isnan(eq_mdd_a[0]) else float("nan"),
+        "final_equity": float(fin_eq_a[0]) if not np.isnan(fin_eq_a[0]) else float("nan"),
+        "liquidated_trades": int(liq_a[0]),
     }
 
 
@@ -630,3 +635,98 @@ def test_final_bar_forced_exit_dense():
     assert new["trades"] == 1
     expected_ret = (close[-1] / open_[0] - 1.0) * 100
     assert abs(new["total_return"] - expected_ret) < 1e-9
+
+def test_phase2_defaults_return_nan_equity():
+    n = 200
+    open_, high, low, close = _synthetic_ohlc(n)
+    longs, shorts = _entries_long_only(n)
+    index_ns = _synthetic_index(n)
+    fee = 0.00035
+    test_start_idx = 150
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    configs = build_config_grid([0.04], [0.02], [0])
+    result = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
+    assert np.isnan(result.get("equity_total_return", np.nan))
+    assert np.isnan(result.get("equity_max_drawdown", np.nan))
+
+
+def test_phase2_position_sizing_equity_metrics():
+    n = 200
+    open_, high, low, close = _synthetic_ohlc(n)
+    longs, shorts = _entries_long_only(n)
+    index_ns = _synthetic_index(n)
+    fee = 0.00035
+    test_start_idx = 150
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    configs = build_config_grid([0.04], [0.02], [0])
+    result = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days, use_position_sizing=True, risk_per_trade_pct=1.0)
+    assert result["trades"] > 0
+    eq_tr = result.get("equity_total_return")
+    eq_mdd = result.get("equity_max_drawdown")
+    assert not np.isnan(eq_tr), f"equity_total_return should not be NaN when position sizing is on, got {eq_tr}"
+    assert not np.isnan(eq_mdd), f"equity_max_drawdown should not be NaN when position sizing is on, got {eq_mdd}"
+    assert isinstance(eq_tr, float)
+    assert isinstance(eq_mdd, float)
+
+
+def test_phase2_leverage_scales_equity():
+    n = 200
+    open_, high, low, close = _synthetic_ohlc(n)
+    longs, shorts = _entries_long_only(n)
+    index_ns = _synthetic_index(n)
+    fee = 0.0
+    test_start_idx = 150
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    sl, tp = 0.1, 0.1
+    configs = build_config_grid([sl], [tp], [0])
+    no_lev = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days, use_position_sizing=True, risk_per_trade_pct=1.0)
+    with_lev = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days, use_position_sizing=True, risk_per_trade_pct=1.0, use_leverage=True, leverage=2.0)
+    if no_lev["trades"] > 0 and not np.isnan(no_lev.get("equity_total_return", np.nan)):
+        lev_eq = abs(with_lev.get("equity_total_return", 0))
+        no_lev_eq = abs(no_lev.get("equity_total_return", 0))
+        assert lev_eq >= no_lev_eq * 1.5, f"2x leverage should amplify equity return magnitude: no_lev={no_lev_eq}, lev={lev_eq}"
+
+
+def test_phase2_liquidation_tracking():
+    n = 50
+    close = np.arange(100.0, 150.0, 1.0, dtype=np.float64)
+    open_ = close - 0.5
+    high = close + 1.0
+    low = close - 1.0
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[0] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    index_ns = _synthetic_index(n)
+    fee = 0.0
+    test_start_idx = 40
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    configs = build_config_grid([0.5], [0.01], [0])
+    result = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days, use_liquidation=True, maintenance_margin_pct=0.5, use_leverage=True, leverage=2.0)
+    assert result["trades"] > 0
+    assert "liquidated_trades" in result
+
+
+def test_phase2_all_features_enabled():
+    n = 200
+    open_, high, low, close = _synthetic_ohlc(n)
+    longs, shorts = _entries_all(n)
+    index_ns = _synthetic_index(n)
+    fee = 0.00035
+    test_start_idx = 150
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    configs = build_config_grid([0.04], [0.02], [0])
+    result = _batched_dense_result(
+        open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days,
+        use_position_sizing=True, risk_per_trade_pct=2.0,
+        use_leverage=True, leverage=3.0,
+        use_liquidation=True, maintenance_margin_pct=0.5,
+    )
+    assert result["trades"] > 0
+    assert not np.isnan(result.get("equity_total_return", np.nan))
+    assert not np.isnan(result.get("equity_max_drawdown", np.nan))
+    assert isinstance(result.get("liquidated_trades", 0), int)

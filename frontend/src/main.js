@@ -26,6 +26,7 @@ function renderAll() {
   renderFilters();
   renderSearchGrid();
   renderExecutionSettings();
+  renderRiskSettings();
   updateRunButton();
 }
 
@@ -117,11 +118,18 @@ function renderSelected() {
 
 function renderFilters() {
   const el = document.getElementById("filter-list");
+  const favs = getFilterFavorites();
+  const sortedFields = [...state.filterFields].sort((a, b) => {
+    const af = favs.includes(a) ? 0 : 1;
+    const bf = favs.includes(b) ? 0 : 1;
+    return af - bf;
+  });
   el.innerHTML = state.filters.map((f, i) => `
     <div class="filter-row" data-idx="${i}">
+      <span class="filter-star${favs.includes(f.field) ? " fav" : ""}" data-field="${f.field}">&#9733;</span>
       <select class="field-sel">
         <option value="">field</option>
-        ${state.filterFields.map(ff => `<option value="${ff}"${ff === f.field ? " selected" : ""}>${ff}</option>`).join("")}
+        ${sortedFields.map(ff => `<option value="${ff}"${ff === f.field ? " selected" : ""}>${ff}</option>`).join("")}
       </select>
       <select class="op-sel">
         <option value="">op</option>
@@ -135,6 +143,28 @@ function renderFilters() {
   if (panel) {
     panel.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("filters"));
   }
+}
+
+function getFilterFavorites() {
+  try {
+    return JSON.parse(localStorage.getItem("myBacktest.filterFieldFavorites")) || [];
+  } catch { return []; }
+}
+
+function saveFilterFavorites(favs) {
+  localStorage.setItem("myBacktest.filterFieldFavorites", JSON.stringify(favs));
+}
+
+function toggleFilterFavorite(field) {
+  let favs = getFilterFavorites();
+  if (favs.includes(field)) {
+    favs = favs.filter(f => f !== field);
+  } else {
+    favs.push(field);
+  }
+  saveFilterFavorites(favs);
+  renderFilters();
+  populateFilterAddControls();
 }
 
 function formatCsvValue(v) {
@@ -190,6 +220,12 @@ function snapshotCurrentConfig() {
     useSpread: String(state.executionSettings.use_spread_slippage),
     spreadPct: String(state.executionSettings.spread_pct),
     slippagePct: String(state.executionSettings.slippage_pct),
+    usePositionSizing: String(state.riskSettings.use_position_sizing),
+    riskPerTradePct: String(state.riskSettings.risk_per_trade_pct),
+    useLeverage: String(state.riskSettings.use_leverage),
+    leverage: String(state.riskSettings.leverage),
+    useLiquidation: String(state.riskSettings.use_liquidation),
+    maintenanceMarginPct: String(state.riskSettings.maintenance_margin_pct),
   };
 }
 
@@ -210,6 +246,12 @@ function getConfigValue(key) {
     case "useSpread": return String(state.executionSettings.use_spread_slippage);
     case "spreadPct": return String(state.executionSettings.spread_pct);
     case "slippagePct": return String(state.executionSettings.slippage_pct);
+    case "usePositionSizing": return String(state.riskSettings.use_position_sizing);
+    case "riskPerTradePct": return String(state.riskSettings.risk_per_trade_pct);
+    case "useLeverage": return String(state.riskSettings.use_leverage);
+    case "leverage": return String(state.riskSettings.leverage);
+    case "useLiquidation": return String(state.riskSettings.use_liquidation);
+    case "maintenanceMarginPct": return String(state.riskSettings.maintenance_margin_pct);
     default: return "";
   }
 }
@@ -298,6 +340,63 @@ function renderExecutionSettings() {
   `;
 }
 
+function renderRiskSettings() {
+  const el = document.getElementById("risk-settings");
+  const rs = state.riskSettings;
+  const trackable = hasTrackableResult();
+  const dirtyRow = (key) => trackable && isConfigKeyChanged(key) ? " config-dirty" : "";
+  const anyDirty = trackable && (
+    isConfigKeyChanged("usePositionSizing") ||
+    isConfigKeyChanged("riskPerTradePct") ||
+    isConfigKeyChanged("useLeverage") ||
+    isConfigKeyChanged("leverage") ||
+    isConfigKeyChanged("useLiquidation") ||
+    isConfigKeyChanged("maintenanceMarginPct")
+  );
+  const panelSection = el.closest(".panel-section");
+  if (panelSection) {
+    panelSection.classList.toggle("config-dirty", anyDirty);
+  }
+  el.innerHTML = `
+    <div class="risk-row${dirtyRow("usePositionSizing")}">
+      <label class="risk-checkbox">
+        <input type="checkbox" id="risk-use-sizing" ${rs.use_position_sizing ? "checked" : ""}>
+        Position sizing
+      </label>
+    </div>
+    <div class="risk-sub ${rs.use_position_sizing ? "" : "risk-disabled"}">
+      <div class="risk-row${dirtyRow("riskPerTradePct")}">
+        <label>Risk % per trade</label>
+        <input type="number" id="risk-per-trade" value="${rs.risk_per_trade_pct}" min="0.1" max="10" step="0.1" ${rs.use_position_sizing ? "" : "disabled"}>
+      </div>
+    </div>
+    <div class="risk-row${dirtyRow("useLeverage")}">
+      <label class="risk-checkbox">
+        <input type="checkbox" id="risk-use-leverage" ${rs.use_leverage ? "checked" : ""}>
+        Use leverage
+      </label>
+    </div>
+    <div class="risk-sub ${rs.use_leverage ? "" : "risk-disabled"}">
+      <div class="risk-row${dirtyRow("leverage")}">
+        <label>Leverage</label>
+        <input type="number" id="risk-leverage" value="${rs.leverage}" min="1" max="125" step="1" ${rs.use_leverage ? "" : "disabled"}>
+      </div>
+    </div>
+    <div class="risk-row${dirtyRow("useLiquidation")}">
+      <label class="risk-checkbox">
+        <input type="checkbox" id="risk-use-liq" ${rs.use_liquidation ? "checked" : ""}>
+        Liquidation
+      </label>
+    </div>
+    <div class="risk-sub ${rs.use_liquidation ? "" : "risk-disabled"}">
+      <div class="risk-row${dirtyRow("maintenanceMarginPct")}">
+        <label>Maint. margin %</label>
+        <input type="number" id="risk-mm" value="${rs.maintenance_margin_pct}" min="0.01" max="1" step="0.01" ${rs.use_liquidation ? "" : "disabled"}>
+      </div>
+    </div>
+  `;
+}
+
 function dirtyTrack(key) {
   const el = document.getElementById("execution-settings");
   if (el) {
@@ -307,8 +406,14 @@ function dirtyTrack(key) {
 
 function populateFilterAddControls() {
   const fieldSel = document.getElementById("filter-field-add");
+  const favs = getFilterFavorites();
+  const sortedFields = [...state.filterFields].sort((a, b) => {
+    const af = favs.includes(a) ? 0 : 1;
+    const bf = favs.includes(b) ? 0 : 1;
+    return af - bf;
+  });
   fieldSel.innerHTML = '<option value="">field</option>' +
-    state.filterFields.map(f => `<option value="${f}">${f}</option>`).join("");
+    sortedFields.map(f => `<option value="${f}">${f}${favs.includes(f) ? " ★" : ""}</option>`).join("");
 
   const opSel = document.getElementById("filter-op-add");
   opSel.innerHTML = '<option value="">op</option>' +
@@ -399,6 +504,12 @@ function buildSearchParams() {
   params.use_spread_slippage = es.use_spread_slippage;
   params.spread_pct = Number(es.spread_pct) || 0;
   params.slippage_pct = Number(es.slippage_pct) || 0;
+  params.use_position_sizing = state.riskSettings.use_position_sizing;
+  params.risk_per_trade_pct = Number(state.riskSettings.risk_per_trade_pct) || 1.0;
+  params.use_leverage = state.riskSettings.use_leverage;
+  params.leverage = Number(state.riskSettings.leverage) || 1;
+  params.use_liquidation = state.riskSettings.use_liquidation;
+  params.maintenance_margin_pct = Number(state.riskSettings.maintenance_margin_pct) || 0.5;
   return params;
 }
 
@@ -632,6 +743,9 @@ function bindEvents() {
     if (e.target.classList.contains("btn-remove")) {
       removeFilter(parseInt(e.target.dataset.idx));
     }
+    if (e.target.classList.contains("filter-star")) {
+      toggleFilterFavorite(e.target.dataset.field);
+    }
   });
 
   document.getElementById("btn-add-filter").addEventListener("click", addFilter);
@@ -727,6 +841,50 @@ function bindEvents() {
     if (target.id === "exec-slippage-pct") {
       state.executionSettings.slippage_pct = target.value;
       dirtyTrack("slippagePct");
+    }
+  });
+
+  document.getElementById("risk-settings").addEventListener("change", e => {
+    const target = e.target;
+    if (target.id === "risk-use-sizing") {
+      state.riskSettings.use_position_sizing = target.checked;
+      renderRiskSettings();
+      dirtyTrack("usePositionSizing");
+    }
+    if (target.id === "risk-use-leverage") {
+      state.riskSettings.use_leverage = target.checked;
+      renderRiskSettings();
+      dirtyTrack("useLeverage");
+    }
+    if (target.id === "risk-use-liq") {
+      state.riskSettings.use_liquidation = target.checked;
+      renderRiskSettings();
+      dirtyTrack("useLiquidation");
+    }
+    if (target.id === "risk-per-trade") {
+      state.riskSettings.risk_per_trade_pct = Number(target.value);
+    }
+    if (target.id === "risk-leverage") {
+      state.riskSettings.leverage = Number(target.value);
+    }
+    if (target.id === "risk-mm") {
+      state.riskSettings.maintenance_margin_pct = Number(target.value);
+    }
+  });
+
+  document.getElementById("risk-settings").addEventListener("input", e => {
+    const target = e.target;
+    if (target.id === "risk-per-trade") {
+      state.riskSettings.risk_per_trade_pct = Number(target.value);
+      dirtyTrack("riskPerTradePct");
+    }
+    if (target.id === "risk-leverage") {
+      state.riskSettings.leverage = Number(target.value);
+      dirtyTrack("leverage");
+    }
+    if (target.id === "risk-mm") {
+      state.riskSettings.maintenance_margin_pct = Number(target.value);
+      dirtyTrack("maintenanceMarginPct");
     }
   });
 
@@ -840,6 +998,12 @@ async function handleLoadSavedRun(runId) {
       state.executionSettings.use_spread_slippage = sp.use_spread_slippage === true;
       state.executionSettings.spread_pct = sp.spread_pct ?? 0;
       state.executionSettings.slippage_pct = sp.slippage_pct ?? 0;
+      state.riskSettings.use_position_sizing = sp.use_position_sizing === true;
+      state.riskSettings.risk_per_trade_pct = sp.risk_per_trade_pct ?? 1.0;
+      state.riskSettings.use_leverage = sp.use_leverage === true;
+      state.riskSettings.leverage = sp.leverage ?? 1;
+      state.riskSettings.use_liquidation = sp.use_liquidation === true;
+      state.riskSettings.maintenance_margin_pct = sp.maintenance_margin_pct ?? 0.5;
     }
 
     const savedStrats = Object.keys(state.strategySettings);

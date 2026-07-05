@@ -58,6 +58,10 @@ def batch_to_normal_rows(
     min_test_win_rate: float,
     min_profit_factor: float,
     min_test_profit_factor: float,
+    equity_total_return_arr: np.ndarray | None = None,
+    equity_max_drawdown_arr: np.ndarray | None = None,
+    final_equity_arr: np.ndarray | None = None,
+    liquidated_trades_arr: np.ndarray | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for c in range(len(sl_arr)):
@@ -93,6 +97,10 @@ def batch_to_normal_rows(
         sl_val = float(sl_arr[c])
         tp_val = float(tp_arr[c])
         ambiguous_trades = int(ambiguous_trades_arr[c])
+        eq_tr = float(equity_total_return_arr[c]) if equity_total_return_arr is not None else float("nan")
+        eq_mdd = float(equity_max_drawdown_arr[c]) if equity_max_drawdown_arr is not None else float("nan")
+        fin_eq = float(final_equity_arr[c]) if final_equity_arr is not None else float("nan")
+        liq_tr = int(liquidated_trades_arr[c]) if liquidated_trades_arr is not None else 0
 
         rows.append(
             {
@@ -126,6 +134,10 @@ def batch_to_normal_rows(
                 "test_avg_bars_held": float(test_avg_bars_held_arr[c]),
                 "ambiguous_trades": ambiguous_trades,
                 "ambiguous_rate": _compute_ambiguous_rate(ambiguous_trades, trades),
+                "equity_total_return": eq_tr,
+                "equity_max_drawdown": eq_mdd,
+                "final_equity": fin_eq,
+                "liquidated_trades": liq_tr,
                 "score": score,
             }
         )
@@ -164,6 +176,10 @@ def batch_to_dense_rows(
     min_win_rate: float,
     min_test_trades: int,
     min_test_win_rate: float,
+    equity_total_return_arr: np.ndarray | None = None,
+    equity_max_drawdown_arr: np.ndarray | None = None,
+    final_equity_arr: np.ndarray | None = None,
+    liquidated_trades_arr: np.ndarray | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for c in range(len(sl_arr)):
@@ -216,6 +232,10 @@ def batch_to_dense_rows(
         aw = avg_win_arr[c]
         al = avg_loss_arr[c]
         ambiguous_trades = int(ambiguous_trades_arr[c])
+        eq_tr = float(equity_total_return_arr[c]) if equity_total_return_arr is not None else float("nan")
+        eq_mdd = float(equity_max_drawdown_arr[c]) if equity_max_drawdown_arr is not None else float("nan")
+        fin_eq = float(final_equity_arr[c]) if final_equity_arr is not None else float("nan")
+        liq_tr = int(liquidated_trades_arr[c]) if liquidated_trades_arr is not None else 0
 
         rows.append(
             {
@@ -249,6 +269,10 @@ def batch_to_dense_rows(
                 "test_avg_bars_held": float(test_avg_bars_held_arr[c]),
                 "ambiguous_trades": ambiguous_trades,
                 "ambiguous_rate": _compute_ambiguous_rate(ambiguous_trades, trades),
+                "equity_total_return": eq_tr,
+                "equity_max_drawdown": eq_mdd,
+                "final_equity": fin_eq,
+                "liquidated_trades": liq_tr,
                 "score": score,
             }
         )
