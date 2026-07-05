@@ -186,7 +186,7 @@ function removeFilter(idx) {
 
 function isHeavyRequest() {
   const tfCount = state.selectedTimeframes.length;
-  const stratCount = state.selectedStrategies.length || 10;
+  const stratCount = state.selectedStrategies.length || state.strategies.length || 10;
   const mode = state.mode;
   let score = tfCount * stratCount;
   if (mode === "dense_high_winrate") score *= 2;
@@ -313,6 +313,9 @@ function bindEvents() {
     const loadBtn = e.target.closest(".saved-load-btn");
     if (loadBtn) handleLoadSavedRun(loadBtn.dataset.runId);
 
+    const exportBtn = e.target.closest(".saved-export-btn");
+    if (exportBtn) downloadSavedRunCSV(exportBtn.dataset.runId);
+
     const delBtn = e.target.closest(".saved-delete-btn");
     if (delBtn) handleDeleteSavedRun(delBtn.dataset.runId);
   });
@@ -324,12 +327,13 @@ async function handleSave() {
     return;
   }
 
+  const payloadMeta = state.lastRunPayload;
   const metadata = {
-    symbol: "BTCUSD",
-    timeframes: state.selectedTimeframes,
-    mode: state.mode,
-    strategies: state.selectedStrategies,
-    filters: state.filters.filter(f => f.field && f.op),
+    symbol: payloadMeta ? payloadMeta.symbol : "BTCUSD",
+    timeframes: payloadMeta ? payloadMeta.timeframes : state.selectedTimeframes,
+    mode: payloadMeta ? payloadMeta.mode : state.mode,
+    strategies: payloadMeta ? (payloadMeta.strategies || []) : state.selectedStrategies,
+    filters: payloadMeta ? (payloadMeta.filters || []) : state.filters.filter(f => f.field && f.op),
     row_count: state.rows.length,
     note: "",
   };
@@ -429,6 +433,16 @@ async function handleDeleteSavedRun(runId) {
   }
 }
 
+function downloadSavedRunCSV(runId) {
+  const a = document.createElement("a");
+  a.href = exportCsvURL(runId);
+  a.download = runId + ".csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  showStatus("Downloading CSV...");
+}
+
 async function refreshSavedRuns() {
   try {
     state.savedRuns = await fetchSavedRuns();
@@ -466,6 +480,7 @@ function renderSavedRuns() {
         </div>
         <div class="saved-actions">
           <button class="btn-small saved-load-btn" data-run-id="${meta.run_id}">Load</button>
+          <button class="btn-small saved-export-btn" data-run-id="${meta.run_id}">Export CSV</button>
           <button class="btn-small saved-delete-btn" data-run-id="${meta.run_id}">Delete</button>
         </div>
       </div>

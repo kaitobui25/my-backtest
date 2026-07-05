@@ -1,8 +1,8 @@
 const API_BASE = "http://127.0.0.1:8000/api";
-const REQUEST_TIMEOUT_MS = 60000;
+const REQUEST_TIMEOUT_MS = 300000;
 
 function parseApiError(err) {
-  if (err.name === "AbortError") return "Backtest request timed out. Try fewer timeframes, fewer strategies, or lighter filters.";
+  if (err.name === "AbortError") return "Backtest request timed out in the browser. The backend may still be finishing the old run. Try fewer timeframes/strategies, wait a bit before running again, or check the backend console.";
   if (err instanceof TypeError && err.message === "Failed to fetch") return "Backend is not reachable. Is uvicorn running on port 8000?";
   return err.message || "Unknown error";
 }

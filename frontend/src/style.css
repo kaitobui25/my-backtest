@@ -423,3 +423,16 @@ body {
   background: #d9534f;
   color: #fff;
 }
+.saved-export-btn {
+  font-size: 10px;
+  padding: 1px 6px;
+  cursor: pointer;
+  border: 1px solid #6ea8fe;
+  border-radius: 2px;
+  background: #e8f0fe;
+  color: #0d6efd;
+}
+.saved-export-btn:hover {
+  background: #6ea8fe;
+  color: #fff;
+}
