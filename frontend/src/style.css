@@ -358,14 +358,14 @@ body {
 }
 .saved-item {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px;
   border: 1px solid #ddd;
   border-radius: 3px;
-  font-size: 11px;
-  white-space: nowrap;
+  font-size: 10px;
   flex-shrink: 0;
+  min-width: 100px;
 }
 .saved-item.saved-current {
   background: #e8f4e8;
@@ -373,8 +373,10 @@ body {
 }
 .saved-info {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 2px 4px;
+  line-height: 1.3;
 }
 .saved-date {
   color: #888;
@@ -395,14 +397,20 @@ body {
 }
 .saved-actions {
   display: flex;
-  gap: 3px;
+  gap: 2px;
+  margin-top: 1px;
+}
+.saved-load-btn,
+.saved-export-btn,
+.saved-delete-btn {
+  font-size: 9px;
+  padding: 1px 4px;
+  cursor: pointer;
+  border-radius: 2px;
+  border: 1px solid;
 }
 .saved-load-btn {
-  font-size: 10px;
-  padding: 1px 6px;
-  cursor: pointer;
-  border: 1px solid #5cb85c;
-  border-radius: 2px;
+  border-color: #5cb85c;
   background: #e8f4e8;
   color: #2d6a2d;
 }
@@ -411,11 +419,7 @@ body {
   color: #fff;
 }
 .saved-delete-btn {
-  font-size: 10px;
-  padding: 1px 6px;
-  cursor: pointer;
-  border: 1px solid #d9534f;
-  border-radius: 2px;
+  border-color: #d9534f;
   background: #fce4e4;
   color: #c9302c;
 }
@@ -424,11 +428,7 @@ body {
   color: #fff;
 }
 .saved-export-btn {
-  font-size: 10px;
-  padding: 1px 6px;
-  cursor: pointer;
-  border: 1px solid #6ea8fe;
-  border-radius: 2px;
+  border-color: #6ea8fe;
   background: #e8f0fe;
   color: #0d6efd;
 }
