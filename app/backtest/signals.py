@@ -250,7 +250,7 @@ def build_signals(df: pd.DataFrame, timeframe: str) -> list[Signal]:
     return signals
 
 
-def build_vol_expansion_signals(df: pd.DataFrame) -> list[DenseSignal]:
+def _build_vol_expansion_dense_signals(df: pd.DataFrame) -> list[DenseSignal]:
     close = df["close"]
     open_ = df["open"]
     high = df["high"]
@@ -335,6 +335,8 @@ def build_signal_variants(
     mode: str,
     strategies: list[str] | set[str] | None = None,
 ) -> list[SignalVariant]:
+    # Normal mode wraps build_signals() (all strategies in one pass).
+    # Dense mode dispatches per-strategy via STRATEGY_BUILDERS registry.
     if strategies is not None:
         strategies = set(strategies)
 
@@ -347,7 +349,7 @@ def build_signal_variants(
 def _build_dense_vol_variants(df: pd.DataFrame, timeframe: str) -> list[SignalVariant]:
     return [
         SignalVariant("VOL_EXPANSION_CONT", params, le, se, sm)
-        for params, le, se, sm in build_vol_expansion_signals(df)
+        for params, le, se, sm in _build_vol_expansion_dense_signals(df)
     ]
 
 

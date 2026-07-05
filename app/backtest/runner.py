@@ -24,7 +24,7 @@ from app.backtest.config import (
 from app.backtest.data_loader import load_ohlc
 from app.backtest.engine import calendar_days_ns, max_gap_days_ns, simulate_trades, simulate_trades_with_entries
 from app.backtest.metrics import metrics, score_candidate, score_dense_candidate
-from app.backtest.signals import SignalVariant, build_signal_variants, side_mode_arrays
+from app.backtest.signals import build_signal_variants, side_mode_arrays
 
 
 def _filter_value(filters: dict[str, Any], key: str, default: Any, timeframe: str | None = None) -> Any:
