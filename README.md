@@ -107,6 +107,19 @@ pytest
 
 Luu y: mot so test/API backtest can du lieu parquet hop le trong `flect_mt5/cache/btc/` hoac `my-data/flect_mt5/cache/btc/`.
 
+### Batch engine benchmark
+
+```powershell
+python tests/benchmark_batch.py
+```
+
+So sanh thoi gian giua engine cu (loop tung config) va batch engine moi tren 48 configs M30:
+
+| Mode    | Old (single-config) | New (batch) | Speedup |
+|---------|--------------------|-------------|---------|
+| normal  | 0.019s             | 0.011s      | 1.78x   |
+| dense   | 0.026s             | 0.012s      | 2.17x   |
+
 ## Cau truc thu muc
 
 ```text
@@ -121,7 +134,10 @@ my-backtest/
 |   +-- backtest/
 |   |   +-- config.py             # symbol, timeframe, grid SL/TP, nguong loc
 |   |   +-- data_loader.py        # load OHLC parquet
-|   |   +-- engine.py             # mo phong lenh va trade exits
+|   |   +-- engine.py             # engine cu: mo phong lenh don config
+|   |   +-- batch_engine.py       # engine moi: batch Numba kernels
+|   |   +-- grid.py               # xay dung grid config arrays tu SL/TP/max_hold
+|   |   +-- result_builder.py     # chuyen batch output thanh row dict, ap dung filter/score
 |   |   +-- indicators.py         # tinh indicator
 |   |   +-- metrics.py            # tinh metric va score
 |   |   +-- paths.py              # tim data root/result path
@@ -144,7 +160,9 @@ my-backtest/
 +-- scripts/
 |   +-- smoke_backtest.py         # smoke script phu tro
 +-- tests/
-|   +-- test_saved_store.py       # test saved runs va mot so API behavior
+|   +-- test_saved_store.py       # test saved runs va API behavior
+|   +-- test_batch_engine.py      # test batch engine vs engine cu
+|   +-- benchmark_batch.py        # benchmark so sanh thoi gian
 +-- data/
 |   +-- saved_runs/               # ket qua da luu, bi ignore boi git
 +-- result/                       # output backtest, bi ignore boi git
@@ -152,6 +170,37 @@ my-backtest/
 +-- .gitignore
 +-- README.md
 ```
+
+## Backend refactor — Batch engine
+
+`runner.py` da duoc tai cau truc de su dung batch Numba kernels thay vi vong lap Python cho tung config.
+
+### Flow hien tai
+
+```
+load OHLC
+build signals
+for each signal + side_mode:
+    build config grid (sl_arr, tp_arr, max_hold_arr)
+    call batch kernel 1 lan         ← thay vi lap tung config
+    convert results -> rows          (filter + score)
+return DataFrame
+```
+
+### Cac thanh phan moi
+
+| File | Vai tro |
+|---|---|
+| `batch_engine.py` | `@njit` kernels xu ly nhieu config mot luc: `simulate_many_configs_summary` (normal), `simulate_many_configs_with_entries_summary` (dense) |
+| `grid.py` | `build_config_grid()` chuyen danh sach SL/TP/max_hold thanh 3 numpy arrays, giu nguyen thu tu `itertools.product` |
+| `result_builder.py` | `batch_to_normal_rows()`, `batch_to_dense_rows()` nhan batch output arrays, ap loc va tinh score, tra ve list row dict |
+| `engine.py` | Engine cu (`simulate_trades`, `simulate_trades_with_entries`) duoc giu lai lam tham chieu |
+
+### Luu y
+
+- `engine.py` (single-config) khong bi sua doi — van con de debug va tham chieu.
+- `runner.py` khong con goi simulate_trades tung config ma goi batch kernel 1 lan moi signal+side_mode.
+- API schema, filter, scoring, saved-runs khong thay doi.
 
 ## Ghi chu van hanh
 
