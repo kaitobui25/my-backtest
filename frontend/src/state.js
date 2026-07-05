@@ -43,6 +43,7 @@ const state = {
     min_trades_per_day: 0.33,
     min_test_trades_per_day: 0.33,
   },
+  lastRunConfigSnapshot: null,
 };
 
 function setState(updates) {

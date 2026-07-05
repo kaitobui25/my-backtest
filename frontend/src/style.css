@@ -521,6 +521,34 @@ body {
   width: 70px;
 }
 
+.item.active {
+  background: #fff3cd;
+  border-color: #ffc07a;
+}
+.item.active.selected {
+  background: #b8d4fe;
+  border-color: #6ea8fe;
+}
+
+.config-dirty,
+.panel.config-dirty,
+.filter-row.config-dirty,
+.grid-row.config-dirty,
+.setting-row.config-dirty,
+.selected-group.config-dirty,
+.panel-body-split.config-dirty,
+#mode-row.config-dirty {
+  background: #ffe6ea !important;
+  border-color: #f3a6b3 !important;
+}
+.grid-row.config-dirty input,
+.grid-row.config-dirty select,
+.setting-row.config-dirty input,
+.setting-row.config-dirty .setting-checkbox-group {
+  background: #ffe6ea !important;
+  border-color: #f3a6b3 !important;
+}
+
 .saved-load-btn {
   border-color: #5cb85c;
   background: #e8f4e8;

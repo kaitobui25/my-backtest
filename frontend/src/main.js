@@ -7,6 +7,7 @@ async function init() {
     state.operators = opts.operators;
     state.strategyParamSchemas = opts.strategy_param_schemas || {};
     state.gridParamSchema = opts.grid_param_schema || {};
+    applyGridDefaults(true);
     populateFilterAddControls();
     renderAll();
     initTable();
@@ -32,13 +33,24 @@ function renderTimeframes() {
   el.innerHTML = state.timeframes.map(tf =>
     `<div class="item${state.selectedTimeframes.includes(tf) ? " selected" : ""}" data-value="${tf}">${tf}</div>`
   ).join("");
+  const panel = el.closest(".panel");
+  if (panel) {
+    panel.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("timeframes"));
+  }
 }
 
 function renderStrategies() {
   const el = document.getElementById("strategy-list");
-  el.innerHTML = state.strategies.map(s =>
-    `<div class="item${state.selectedStrategies.includes(s) ? " selected" : ""}" data-value="${s}">${s}</div>`
-  ).join("");
+  el.innerHTML = state.strategies.map(s => {
+    let cls = "item";
+    if (state.selectedStrategies.includes(s)) cls += " selected";
+    if (s === state.activeStrategy) cls += " active";
+    return `<div class="${cls}" data-value="${s}">${s}</div>`;
+  }).join("");
+  const panel = el.closest(".panel");
+  if (panel) {
+    panel.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("strategies"));
+  }
 }
 
 function renderStrategySettings() {
@@ -50,11 +62,13 @@ function renderStrategySettings() {
     return;
   }
   const settings = state.strategySettings[s] || {};
+  const trackable = hasTrackableResult();
+  const dirty = trackable && isConfigKeyChanged("strategySettings") ? " config-dirty" : "";
   let html = `<div class="settings-strat-name">${s}</div>`;
   for (const [param, meta] of Object.entries(schema)) {
     const value = settings[param] || meta.default;
     if (meta.type === "range") {
-      html += `<div class="setting-row">
+      html += `<div class="setting-row${dirty}">
         <label>${param}</label>
         <div class="setting-range">
           <input type="number" class="setting-min" data-strat="${s}" data-param="${param}" value="${value[0]}" min="${meta.min}" max="${meta.max}" step="${meta.step}">
@@ -69,7 +83,7 @@ function renderStrategySettings() {
           ${opt}
         </label>`
       ).join("");
-      html += `<div class="setting-row">
+      html += `<div class="setting-row${dirty}">
         <label>${param}</label>
         <div class="setting-checkbox-group">${checkboxHtml}</div>
       </div>`;
@@ -88,10 +102,16 @@ function renderSelected() {
 
   const sEl = document.getElementById("selected-strategies");
   sEl.innerHTML = state.selectedStrategies.length === 0
-    ? '<span class="placeholder" style="color:#999;font-size:11px;">Click strategies to add</span>'
+    ? '<span class="placeholder" style="color:#999;font-size:11px;">Double-click strategies to add</span>'
     : state.selectedStrategies.map(s =>
         `<span class="selected-tag">${s} <span class="remove" data-strat="${s}">&times;</span></span>`
       ).join("");
+
+  const groups = document.querySelectorAll("#panel-selected .selected-group");
+  if (groups.length >= 2) {
+    groups[0].classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("timeframes"));
+    groups[1].classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("strategies"));
+  }
 }
 
 function renderFilters() {
@@ -110,6 +130,92 @@ function renderFilters() {
       <button class="btn-remove" data-idx="${i}">&times;</button>
     </div>
   `).join("");
+  const panel = el.closest(".panel");
+  if (panel) {
+    panel.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("filters"));
+  }
+}
+
+function formatCsvValue(v) {
+  if (v == null) return "";
+  if (Array.isArray(v)) return v.join(", ");
+  return String(v);
+}
+
+function getProfileDefaults(profile) {
+  const schema = state.gridParamSchema;
+  const pd = schema && schema[profile];
+  const DENSE_FALLBACK = {
+    sl_values: [0.02, 0.03, 0.04, 0.06, 0.08],
+    tp_values: [0.005, 0.0075, 0.01, 0.015, 0.02, 0.03],
+    max_holds: [16, 32, 64, 96],
+  };
+  const NORMAL_FALLBACK = {
+    sl_values: [0.01, 0.02, 0.04, 0.06],
+    tp_values: [0.005, 0.01, 0.02, 0.03],
+    max_holds: [48, 96, 0],
+  };
+  const fb = profile === "dense" ? DENSE_FALLBACK : NORMAL_FALLBACK;
+  return {
+    sl_values: pd?.sl_values || fb.sl_values,
+    tp_values: pd?.tp_values || fb.tp_values,
+    max_holds: pd?.max_holds || fb.max_holds,
+  };
+}
+
+function applyGridDefaults(overwrite) {
+  const profile = state.gridSettings.profile || "dense";
+  const defs = getProfileDefaults(profile);
+  const gs = state.gridSettings;
+  if (overwrite || !gs.sl_values) gs.sl_values = formatCsvValue(defs.sl_values);
+  if (overwrite || !gs.tp_values) gs.tp_values = formatCsvValue(defs.tp_values);
+  if (overwrite || !gs.max_holds) gs.max_holds = formatCsvValue(defs.max_holds);
+}
+
+function snapshotCurrentConfig() {
+  return {
+    timeframes: [...state.selectedTimeframes].sort().join(","),
+    strategies: [...state.selectedStrategies].sort().join(","),
+    mode: state.mode,
+    filters: JSON.stringify(state.filters.map(f => ({ field: f.field, op: f.op, value: String(f.value) }))),
+    gridProfile: state.gridSettings.profile,
+    gridSl: state.gridSettings.sl_values,
+    gridTp: state.gridSettings.tp_values,
+    gridMh: state.gridSettings.max_holds,
+    gridMtpd: String(state.densitySettings.min_trades_per_day),
+    gridMttpd: String(state.densitySettings.min_test_trades_per_day),
+    strategySettings: JSON.stringify(state.strategySettings),
+  };
+}
+
+function getConfigValue(key) {
+  switch (key) {
+    case "timeframes": return [...state.selectedTimeframes].sort().join(",");
+    case "strategies": return [...state.selectedStrategies].sort().join(",");
+    case "mode": return state.mode;
+    case "filters": return JSON.stringify(state.filters.map(f => ({ field: f.field, op: f.op, value: String(f.value) })));
+    case "gridProfile": return state.gridSettings.profile;
+    case "gridSl": return state.gridSettings.sl_values;
+    case "gridTp": return state.gridSettings.tp_values;
+    case "gridMh": return state.gridSettings.max_holds;
+    case "gridMtpd": return String(state.densitySettings.min_trades_per_day);
+    case "gridMttpd": return String(state.densitySettings.min_test_trades_per_day);
+    case "strategySettings": return JSON.stringify(state.strategySettings);
+    default: return "";
+  }
+}
+
+function hasTrackableResult() {
+  return state.loading || (state.rows.length > 0 && state.lastRunConfigSnapshot !== null);
+}
+
+function isConfigKeyChanged(key) {
+  if (!state.lastRunConfigSnapshot) return false;
+  return getConfigValue(key) !== state.lastRunConfigSnapshot[key];
+}
+
+function saveConfigSnapshot() {
+  state.lastRunConfigSnapshot = snapshotCurrentConfig();
 }
 
 function renderSearchGrid() {
@@ -121,31 +227,33 @@ function renderSearchGrid() {
   }
   const gs = state.gridSettings;
   const ds = state.densitySettings;
+  const trackable = hasTrackableResult();
+  const dirty = (key) => trackable && isConfigKeyChanged(key) ? " config-dirty" : "";
   el.innerHTML = `
-    <div class="grid-row">
+    <div class="grid-row${dirty("gridProfile")}">
       <label>Profile</label>
       <select id="grid-profile">
         <option value="dense" ${gs.profile === "dense" ? "selected" : ""}>Dense</option>
         <option value="normal" ${gs.profile === "normal" ? "selected" : ""}>Normal</option>
       </select>
     </div>
-    <div class="grid-row">
+    <div class="grid-row${dirty("gridSl")}">
       <label>SL values</label>
       <input type="text" id="grid-sl" value="${gs.sl_values}" placeholder="e.g. 0.02, 0.04, 0.06">
     </div>
-    <div class="grid-row">
+    <div class="grid-row${dirty("gridTp")}">
       <label>TP values</label>
       <input type="text" id="grid-tp" value="${gs.tp_values}" placeholder="e.g. 0.005, 0.01, 0.02">
     </div>
-    <div class="grid-row">
+    <div class="grid-row${dirty("gridMh")}">
       <label>Max Hold</label>
       <input type="text" id="grid-max-hold" value="${gs.max_holds}" placeholder="e.g. 16, 32, 64">
     </div>
-    <div class="grid-row">
+    <div class="grid-row${dirty("gridMtpd")}">
       <label>Min trades/day</label>
       <input type="number" id="grid-mtpd" value="${ds.min_trades_per_day}" min="0.1" max="5" step="0.01">
     </div>
-    <div class="grid-row">
+    <div class="grid-row${dirty("gridMttpd")}">
       <label>Min test trades/day</label>
       <input type="number" id="grid-mttpd" value="${ds.min_test_trades_per_day}" min="0.1" max="5" step="0.01">
     </div>
@@ -264,7 +372,23 @@ function toggleTimeframe(tf) {
   updateRunButton();
 }
 
-function toggleStrategy(s) {
+function activateStrategy(s) {
+  state.activeStrategy = s;
+  if (!state.strategySettings[s]) {
+    const schema = state.strategyParamSchemas[s];
+    if (schema) {
+      const settings = {};
+      for (const [param, meta] of Object.entries(schema)) {
+        settings[param] = [...meta.default];
+      }
+      state.strategySettings[s] = settings;
+    }
+  }
+  renderStrategies();
+  renderStrategySettings();
+}
+
+function toggleSelectedStrategy(s) {
   const idx = state.selectedStrategies.indexOf(s);
   if (idx >= 0) {
     state.selectedStrategies.splice(idx, 1);
@@ -377,6 +501,7 @@ async function handleRun() {
     state.rowNotes = {};
     state.dirty = false;
     updateDirtyIndicator();
+    saveConfigSnapshot();
 
     const timing = result.timing;
     const durationStr = timing ? " — " + timing.duration_sec.toFixed(2) + "s" : "";
@@ -401,7 +526,15 @@ function bindEvents() {
 
   document.getElementById("strategy-list").addEventListener("click", e => {
     const item = e.target.closest(".item");
-    if (item) toggleStrategy(item.dataset.value);
+    if (item) activateStrategy(item.dataset.value);
+  });
+
+  document.getElementById("strategy-list").addEventListener("dblclick", e => {
+    const item = e.target.closest(".item");
+    if (item) {
+      e.preventDefault();
+      toggleSelectedStrategy(item.dataset.value);
+    }
   });
 
   document.getElementById("panel-selected").addEventListener("click", e => {
@@ -438,6 +571,10 @@ function bindEvents() {
   document.querySelectorAll('input[name="mode"]').forEach(radio => {
     radio.addEventListener("change", e => {
       state.mode = e.target.value;
+      const el = document.getElementById("mode-row");
+      if (el) {
+        el.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("mode"));
+      }
     });
   });
 
@@ -463,11 +600,20 @@ function bindEvents() {
         state.strategySettings[strat][param] = state.strategySettings[strat][param].filter(v => v !== target.value);
       }
     }
+    const splitEl = document.getElementById("strategy-settings");
+    const splitPanel = splitEl.closest(".panel-body-split");
+    if (splitPanel) {
+      splitPanel.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("strategySettings"));
+    }
   });
 
   document.getElementById("search-grid").addEventListener("change", e => {
     const target = e.target;
-    if (target.id === "grid-profile") state.gridSettings.profile = target.value;
+    if (target.id === "grid-profile") {
+      state.gridSettings.profile = target.value;
+      applyGridDefaults(true);
+      renderSearchGrid();
+    }
     if (target.id === "grid-mtpd") state.densitySettings.min_trades_per_day = target.value;
     if (target.id === "grid-mttpd") state.densitySettings.min_test_trades_per_day = target.value;
   });
@@ -531,6 +677,7 @@ async function handleSave() {
     state.dirty = false;
     updateDirtyIndicator();
     showStatus("Saved");
+    saveConfigSnapshot();
     refreshSavedRuns();
   } catch (e) {
     showError(parseApiError(e));
@@ -600,6 +747,7 @@ async function handleLoadSavedRun(runId) {
     renderAll();
     renderColumnChooser();
     renderTableContent();
+    saveConfigSnapshot();
 
     const tfs = (meta.timeframes || []).join(",");
     const rowsInfo = data.rows ? " — " + data.rows.length + " rows" : "";
