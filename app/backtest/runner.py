@@ -201,7 +201,7 @@ def evaluate_dense_timeframe(
                 ):
                     continue
 
-                test_mask = is_test_exit[entries]
+                test_mask = is_test_exit[exits]
                 test_returns = returns[test_mask]
                 test_entries = entries[test_mask]
                 test_bars_held = bars_held[test_mask]
@@ -215,6 +215,7 @@ def evaluate_dense_timeframe(
                 ):
                     continue
 
+                safe_test_days = test_days if test_days > 0 else 1
                 row = {
                     "win_rate": wr,
                     "profit_factor": pf,
@@ -224,8 +225,10 @@ def evaluate_dense_timeframe(
                     "test_profit_factor": test_pf,
                     "test_expectancy": test_exp,
                     "max_drawdown": max_dd,
-                    "test_trades_per_day": test_trades / test_days,
+                    "test_trades_per_day": test_trades / safe_test_days,
                 }
+                safe_days = days if days > 0 else 1
+                safe_test_days = test_days if test_days > 0 else 1
                 rows.append(
                     {
                         "timeframe": timeframe,
@@ -243,7 +246,7 @@ def evaluate_dense_timeframe(
                         "max_drawdown": max_dd,
                         "avg_win": avg_win,
                         "avg_loss": avg_loss,
-                        "trades_per_day": trades / days,
+                        "trades_per_day": trades / safe_days,
                         "max_gap_days": max_gap_days_ns(index_ns, entries),
                         "avg_bars_held": float(np.mean(bars_held)) if bars_held.size else np.nan,
                         "test_trades": test_trades,
@@ -251,7 +254,7 @@ def evaluate_dense_timeframe(
                         "test_total_return": test_ret,
                         "test_profit_factor": test_pf,
                         "test_expectancy": test_exp,
-                        "test_trades_per_day": test_trades / test_days,
+                        "test_trades_per_day": test_trades / safe_test_days,
                         "test_max_gap_days": max_gap_days_ns(index_ns, test_entries),
                         "test_avg_bars_held": float(np.mean(test_bars_held)) if test_bars_held.size else np.nan,
                         "score": score_dense_candidate(row),

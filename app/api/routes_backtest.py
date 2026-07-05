@@ -47,6 +47,9 @@ def validate_request(request: BacktestRequest) -> None:
 
 
 def apply_result_filter(df: pd.DataFrame, item: ResultFilter) -> pd.DataFrame:
+    if item.field not in df.columns:
+        return df.head(0)
+
     if item.op == "~":
         return df[df[item.field].astype(str).str.contains(str(item.value), case=False, na=False)]
 

@@ -17,6 +17,7 @@ MIN_FULL_TRADES = {
     "M15": 80,
     "M30": 70,
     "H1": 55,
+    "H2": 40,
     "H4": 28,
     "D1": 12,
 }
@@ -25,6 +26,7 @@ MIN_TEST_TRADES = {
     "M15": 20,
     "M30": 18,
     "H1": 14,
+    "H2": 10,
     "H4": 7,
     "D1": 4,
 }
@@ -48,11 +50,19 @@ REQUIRED_COLUMNS = [
     "profit_factor",
     "expectancy",
     "max_drawdown",
+    "avg_win",
+    "avg_loss",
     "test_trades",
     "test_win_rate",
     "test_total_return",
     "test_profit_factor",
     "test_expectancy",
+    "trades_per_day",
+    "max_gap_days",
+    "avg_bars_held",
+    "test_trades_per_day",
+    "test_max_gap_days",
+    "test_avg_bars_held",
     "score",
 ]
 
