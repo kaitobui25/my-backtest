@@ -95,6 +95,11 @@ function showStatus(msg) {
   document.getElementById("status-text").textContent = msg;
 }
 
+function updateDirtyIndicator() {
+  const el = document.getElementById("dirty-indicator");
+  if (el) el.textContent = state.dirty ? "unsaved" : "";
+}
+
 function showError(msg) {
   const el = document.getElementById("status-error");
   el.textContent = msg;
@@ -192,6 +197,8 @@ async function handleRun() {
     state.loadedFromSave = false;
     state.lastRunPayload = payload;
     state.rowNotes = {};
+    state.dirty = false;
+    updateDirtyIndicator();
     showStatus(`Done — ${result.row_count} rows`);
     renderTable(result);
   } catch (e) {
@@ -291,6 +298,8 @@ async function handleSave() {
     const result = await saveRun(payload);
     state.currentRunId = result.run_id;
     state.currentRunMeta = metadata;
+    state.dirty = false;
+    updateDirtyIndicator();
     showStatus("Saved");
     refreshSavedRuns();
   } catch (e) {
@@ -311,9 +320,25 @@ async function handleLoadSavedRun(runId) {
     state.sortDir = "asc";
     state.searchText = "";
     document.getElementById("search-input").value = "";
+
+    const meta = data.metadata || {};
+    state.selectedTimeframes = meta.timeframes || [];
+    state.selectedStrategies = meta.strategies || [];
+    state.mode = meta.mode || "normal";
+    state.filters = meta.filters && meta.filters.length > 0
+      ? meta.filters
+      : [{ field: "win_rate", op: ">=", value: "65" }, { field: "profit_factor", op: ">=", value: "1.2" }];
+    document.querySelectorAll('input[name="mode"]').forEach(r => {
+      r.checked = r.value === state.mode;
+    });
+
     state.currentRunId = runId;
-    state.currentRunMeta = data.metadata || null;
+    state.currentRunMeta = meta;
     state.loadedFromSave = true;
+    state.dirty = false;
+    updateDirtyIndicator();
+
+    renderAll();
     renderColumnChooser();
     renderTableContent();
     showStatus("Loaded saved run");

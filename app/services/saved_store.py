@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -15,11 +14,12 @@ def _ensure_dir() -> None:
 
 
 def _safe_path(run_id: str) -> Path | None:
-    _ensure_dir()
-    resolved = (DATA_DIR / f"{run_id}.json").resolve()
-    if not str(resolved.parent).startswith(str(DATA_DIR.resolve())):
+    try:
+        candidate = (DATA_DIR / f"{run_id}.json").resolve()
+        candidate.relative_to(DATA_DIR.resolve())
+        return candidate
+    except (ValueError, OSError):
         return None
-    return resolved
 
 
 def save_run(

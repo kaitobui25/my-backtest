@@ -148,6 +148,8 @@ function handleTableChange(e) {
 
   if (e.target.classList.contains("row-cb")) {
     state.rowSelect[idx] = e.target.checked;
+    state.dirty = true;
+    updateDirtyIndicator();
   }
 }
 
@@ -159,6 +161,8 @@ function handleTableInput(e) {
 
   if (e.target.classList.contains("note-input")) {
     state.rowNotes[idx] = e.target.value;
+    state.dirty = true;
+    updateDirtyIndicator();
   }
 }
 
@@ -186,26 +190,39 @@ function handleSearch() {
 
 function setRating(idx, stars) {
   state.ratings[idx] = stars;
+  state.dirty = true;
+  updateDirtyIndicator();
   renderTableBody();
 }
 
 function getSelectedRows() {
   const visibleCols = getVisibleColumns();
-  return state.rows
-    .map((row, idx) => ({ row, idx }))
-    .filter(({ idx }) => state.rowSelect[idx])
-    .map(({ row }) => {
+  const sorted = getSortedRows(getFilteredRows());
+  return sorted
+    .filter(row => {
+      const idx = state.rows.indexOf(row);
+      return state.rowSelect[idx];
+    })
+    .map(row => {
       const obj = {};
       visibleCols.forEach(col => { obj[col] = row[col]; });
       return obj;
     });
 }
 
+function csvEscape(v) {
+  if (v == null) return "";
+  const s = String(v);
+  return s.includes(",") || s.includes('"') || s.includes("\n")
+    ? '"' + s.replace(/"/g, '""') + '"'
+    : s;
+}
+
 function copySelected() {
   const rows = getSelectedRows();
   if (rows.length === 0) { alert("No rows selected"); return; }
   const cols = getVisibleColumns();
-  const lines = rows.map(row => cols.map(col => row[col] ?? "").join("\t"));
+  const lines = rows.map(row => cols.map(col => csvEscape(row[col])).join("\t"));
   const tsv = cols.join("\t") + "\n" + lines.join("\n");
 
   navigator.clipboard.writeText(tsv).then(() => {
@@ -223,17 +240,20 @@ function copySelected() {
 
 function exportCSV() {
   const cols = getVisibleColumns();
+  const reviewCols = ["selected", "rating", "note"];
+  const allCols = [...cols, ...reviewCols];
   const filtered = getFilteredRows();
   const sorted = getSortedRows(filtered);
-  const rows = sorted.map(row => cols.map(col => {
-    const v = row[col];
-    if (v == null) return "";
-    const s = String(v);
-    return s.includes(",") || s.includes('"') || s.includes("\n")
-      ? '"' + s.replace(/"/g, '""') + '"'
-      : s;
-  }).join(","));
-  const csv = cols.join(",") + "\n" + rows.join("\n");
+  const rows = sorted.map(row => {
+    const origIdx = state.rows.indexOf(row);
+    const dataCells = cols.map(col => csvEscape(row[col]));
+    const sel = state.rowSelect[origIdx] ? "yes" : "";
+    const rating = state.ratings[origIdx] || "";
+    const note = state.rowNotes[origIdx] || "";
+    const reviewCells = [sel, rating, note].map(csvEscape);
+    return [...dataCells, ...reviewCells].join(",");
+  }).join("\n");
+  const csv = allCols.join(",") + "\n" + rows.join("\n");
 
   const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);

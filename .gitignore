@@ -18,6 +18,9 @@ result/
 # Logs
 *.log
 
+# Saved runs data
+data/saved_runs/
+
 # Backtest outputs
 rejected_setups.csv
 backtest_v1/
