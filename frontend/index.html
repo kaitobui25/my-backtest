@@ -51,6 +51,11 @@
     <button id="btn-run" disabled>Run Backtest</button>
   </div>
 
+  <div id="saved-bar">
+    <div class="saved-header">Saved Runs <span class="saved-badge" id="saved-badge"></span></div>
+    <div id="saved-runs-list" class="saved-list"><div class="saved-empty">No saved runs</div></div>
+  </div>
+
   <div id="status-bar">
     <span id="status-text">Ready</span>
     <span id="status-error" class="error"></span>
@@ -58,7 +63,7 @@
 
   <div id="result-area">
     <div id="table-toolbar">
-      <button class="btn-small" id="btn-save" title="Phase 4">Save</button>
+      <button class="btn-small" id="btn-save">Save</button>
       <button class="btn-small" id="btn-copy-selected">Copy Selected</button>
       <button class="btn-small" id="btn-export-csv">Export CSV</button>
       <button class="btn-small" id="btn-toggle-columns" title="Toggle column visibility">Columns ▾</button>

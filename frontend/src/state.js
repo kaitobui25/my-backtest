@@ -20,6 +20,13 @@ const state = {
   sortDir: "asc",
   rowSelect: {},
   ratings: {},
+  currentRunId: null,
+  currentRunMeta: null,
+  savedRuns: [],
+  rowNotes: {},
+  dirty: false,
+  loadedFromSave: false,
+  lastRunPayload: null,
 };
 
 function setState(updates) {

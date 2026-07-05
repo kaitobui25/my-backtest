@@ -1,7 +1,4 @@
 function initTable() {
-  document.getElementById("btn-save").addEventListener("click", () => {
-    alert("Save will be implemented in Phase 4");
-  });
   document.getElementById("btn-copy-selected").addEventListener("click", copySelected);
   document.getElementById("btn-export-csv").addEventListener("click", exportCSV);
   document.getElementById("btn-toggle-columns").addEventListener("click", () => {
@@ -13,6 +10,7 @@ function initTable() {
   document.getElementById("search-input").addEventListener("input", handleSearch);
   document.getElementById("result-table").addEventListener("click", handleTableClick);
   document.getElementById("result-table").addEventListener("change", handleTableChange);
+  document.getElementById("result-table").addEventListener("input", handleTableInput);
   document.getElementById("table-container").addEventListener("change", e => {
     if (e.target.dataset.col) toggleColumn(e.target.dataset.col);
   });
@@ -78,11 +76,12 @@ function renderTableContent() {
 function renderTableHeader() {
   const thead = document.querySelector("#result-table thead");
   const visibleCols = getVisibleColumns();
-  const cols = ["checkbox", "rating", ...visibleCols];
+  const cols = ["checkbox", "rating", "notes", ...visibleCols];
 
   thead.innerHTML = `<tr>${cols.map(col => {
     if (col === "checkbox") return '<th class="cb">&#x2611;</th>';
     if (col === "rating") return '<th class="cb">&#x2605;</th>';
+    if (col === "notes") return '<th class="notes-th">Notes</th>';
     const arrow = state.sortCol === col ? (state.sortDir === "asc" ? " &#x25B2;" : " &#x25BC;") : "";
     return `<th data-col="${col}">${col}${arrow}</th>`;
   }).join("")}</tr>`;
@@ -93,9 +92,10 @@ function renderTableBody() {
   const visibleCols = getVisibleColumns();
   const filtered = getFilteredRows();
   const sorted = getSortedRows(filtered);
+  const colspan = visibleCols.length + 3;
 
   if (sorted.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="' + (visibleCols.length + 2) + '" style="text-align:center;color:#999;padding:20px;">No results</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="' + colspan + '" style="text-align:center;color:#999;padding:20px;">No results</td></tr>';
     return;
   }
 
@@ -104,6 +104,7 @@ function renderTableBody() {
     const checked = state.rowSelect[origIdx] ? "checked" : "";
     const rating = state.ratings[origIdx] || 0;
     const stars = "\u2605".repeat(rating) + "\u2606".repeat(5 - rating);
+    const note = state.rowNotes[origIdx] || "";
 
     const cells = visibleCols.map(col => {
       const v = row[col];
@@ -113,6 +114,7 @@ function renderTableBody() {
     return `<tr data-idx="${origIdx}">
       <td class="cb"><input type="checkbox" class="row-cb" ${checked}></td>
       <td class="star" data-rating="${rating}">${stars}</td>
+      <td class="notes-cell"><input class="note-input" type="text" value="${note.replace(/"/g, '&quot;')}" placeholder="..."></td>
       ${cells}
     </tr>`;
   }).join("");
@@ -146,6 +148,17 @@ function handleTableChange(e) {
 
   if (e.target.classList.contains("row-cb")) {
     state.rowSelect[idx] = e.target.checked;
+  }
+}
+
+function handleTableInput(e) {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  const idx = parseInt(tr.dataset.idx);
+  if (isNaN(idx)) return;
+
+  if (e.target.classList.contains("note-input")) {
+    state.rowNotes[idx] = e.target.value;
   }
 }
 

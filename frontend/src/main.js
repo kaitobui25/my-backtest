@@ -9,6 +9,7 @@ async function init() {
     renderAll();
     initTable();
     bindEvents();
+    refreshSavedRuns();
   } catch (e) {
     showError("Failed to load options: " + e.message);
   }
@@ -186,6 +187,11 @@ async function handleRun() {
     const result = await runBacktestAPI(payload);
     state.columns = result.columns;
     state.rows = result.rows;
+    state.currentRunId = null;
+    state.currentRunMeta = null;
+    state.loadedFromSave = false;
+    state.lastRunPayload = payload;
+    state.rowNotes = {};
     showStatus(`Done — ${result.row_count} rows`);
     renderTable(result);
   } catch (e) {
@@ -246,6 +252,134 @@ function bindEvents() {
   });
 
   document.getElementById("btn-run").addEventListener("click", handleRun);
+  document.getElementById("btn-save").addEventListener("click", handleSave);
+  document.getElementById("saved-runs-list").addEventListener("click", e => {
+    const loadBtn = e.target.closest(".saved-load-btn");
+    if (loadBtn) handleLoadSavedRun(loadBtn.dataset.runId);
+
+    const delBtn = e.target.closest(".saved-delete-btn");
+    if (delBtn) handleDeleteSavedRun(delBtn.dataset.runId);
+  });
+}
+
+async function handleSave() {
+  if (!state.rows || state.rows.length === 0) {
+    showStatus("No results to save");
+    return;
+  }
+
+  const metadata = {
+    symbol: "BTCUSD",
+    timeframes: state.selectedTimeframes,
+    mode: state.mode,
+    strategies: state.selectedStrategies,
+    filters: state.filters.filter(f => f.field && f.op),
+    row_count: state.rows.length,
+    note: "",
+  };
+
+  const payload = {
+    columns: state.columns,
+    rows: state.rows,
+    ratings: state.ratings,
+    selectedRows: state.rowSelect,
+    rowNotes: state.rowNotes,
+    metadata,
+  };
+
+  try {
+    const result = await saveRun(payload);
+    state.currentRunId = result.run_id;
+    state.currentRunMeta = metadata;
+    showStatus("Saved");
+    refreshSavedRuns();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function handleLoadSavedRun(runId) {
+  try {
+    const data = await loadSavedRun(runId);
+    state.columns = data.columns;
+    state.rows = data.rows;
+    state.ratings = data.ratings || {};
+    state.rowSelect = data.selectedRows || {};
+    state.rowNotes = data.rowNotes || {};
+    state.columnVisibility = {};
+    state.sortCol = null;
+    state.sortDir = "asc";
+    state.searchText = "";
+    document.getElementById("search-input").value = "";
+    state.currentRunId = runId;
+    state.currentRunMeta = data.metadata || null;
+    state.loadedFromSave = true;
+    renderColumnChooser();
+    renderTableContent();
+    showStatus("Loaded saved run");
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function handleDeleteSavedRun(runId) {
+  if (!confirm("Delete this saved run?")) return;
+  try {
+    await deleteSavedRun(runId);
+    if (state.currentRunId === runId) {
+      state.currentRunId = null;
+      state.currentRunMeta = null;
+      state.loadedFromSave = false;
+    }
+    refreshSavedRuns();
+    showStatus("Deleted saved run");
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function refreshSavedRuns() {
+  try {
+    state.savedRuns = await fetchSavedRuns();
+  } catch (e) {
+    state.savedRuns = [];
+  }
+  renderSavedRuns();
+}
+
+function renderSavedRuns() {
+  const el = document.getElementById("saved-runs-list");
+  const badge = document.getElementById("saved-badge");
+  const list = state.savedRuns;
+
+  if (!list || list.length === 0) {
+    el.innerHTML = '<div class="saved-empty">No saved runs</div>';
+    if (badge) badge.textContent = "";
+    return;
+  }
+
+  if (badge) badge.textContent = "(" + list.length + ")";
+
+  el.innerHTML = list.map(meta => {
+    const created = meta.created_at ? meta.created_at.slice(0, 19).replace("T", " ") : "?";
+    const tfs = (meta.timeframes || []).join(",");
+    const strats = (meta.strategies || []).length;
+    return `
+      <div class="saved-item${meta.run_id === state.currentRunId ? " saved-current" : ""}">
+        <div class="saved-info">
+          <span class="saved-date">${created}</span>
+          <span class="saved-tfs">${tfs}</span>
+          <span class="saved-mode">${meta.mode || "?"}</span>
+          <span class="saved-rows">${meta.row_count || "?"} rows</span>
+          ${strats > 0 ? `<span class="saved-strats">${strats} strats</span>` : ""}
+        </div>
+        <div class="saved-actions">
+          <button class="btn-small saved-load-btn" data-run-id="${meta.run_id}">Load</button>
+          <button class="btn-small saved-delete-btn" data-run-id="${meta.run_id}">Delete</button>
+        </div>
+      </div>
+    `;
+  }).join("");
 }
 
 init();

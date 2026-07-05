@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes_backtest import router as backtest_router
 from app.api.routes_options import router as options_router
+from app.api.routes_saved import router as saved_router
 
 
 app = FastAPI(title="Backtest Internal API")
@@ -24,3 +25,4 @@ app.add_middleware(
 
 app.include_router(options_router)
 app.include_router(backtest_router)
+app.include_router(saved_router)
