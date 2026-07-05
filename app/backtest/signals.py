@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from app.backtest.indicators import adx, atr, ema, macd, rsi, squeeze_momentum, supertrend, wavetrend, williams_vix_fix
-from app.backtest.strategy_params import VOL_EXPANSION_CONT_DEFAULTS
+from app.backtest.strategy_params import VOL_EXPANSION_CONT_DEFAULTS, STRATEGY_PARAM_SCHEMAS
 
 
 Signal = tuple[str, str, np.ndarray, np.ndarray, tuple[str, ...]]
@@ -34,6 +34,14 @@ def side_mode_arrays(long_entries: np.ndarray, short_entries: np.ndarray, side_m
     if side_mode == "short_only":
         return np.zeros_like(long_entries), short_entries
     return long_entries, short_entries
+
+
+def _expand_range(value, step) -> list:
+    if isinstance(value, (list, tuple)) and len(value) == 2 and step and step > 0:
+        start, end = value
+        count = int(round((end - start) / step)) + 1
+        return [round(start + i * step, 10) for i in range(count)]
+    return list(value) if isinstance(value, (list, tuple)) else [value]
 
 
 def build_signals(df: pd.DataFrame, timeframe: str, strategy_params: dict | None = None) -> list[Signal]:
@@ -156,11 +164,12 @@ def build_signals(df: pd.DataFrame, timeframe: str, strategy_params: dict | None
     body = (close - open_).abs()
     body_ratio = body / (high - low).replace(0, np.nan)
     _vol_p = (strategy_params or {}).get("VOL_EXPANSION_CONT", VOL_EXPANSION_CONT_DEFAULTS)
-    vol_range_mult = _vol_p.get("range_mult", VOL_EXPANSION_CONT_DEFAULTS["range_mult"])
+    _vol_schema = STRATEGY_PARAM_SCHEMAS.get("VOL_EXPANSION_CONT", {})
+    vol_range_mult = _expand_range(_vol_p.get("range_mult", VOL_EXPANSION_CONT_DEFAULTS["range_mult"]), _vol_schema.get("range_mult", {}).get("step"))
     vol_trend_names = _vol_p.get("trend", VOL_EXPANSION_CONT_DEFAULTS["trend"])
-    vol_adx_min = _vol_p.get("adx_min", VOL_EXPANSION_CONT_DEFAULTS["adx_min"])
-    vol_close_extreme = _vol_p.get("close_extreme", VOL_EXPANSION_CONT_DEFAULTS["close_extreme"])
-    vol_body_min = _vol_p.get("body_min", VOL_EXPANSION_CONT_DEFAULTS["body_min"])
+    vol_adx_min = _expand_range(_vol_p.get("adx_min", VOL_EXPANSION_CONT_DEFAULTS["adx_min"]), _vol_schema.get("adx_min", {}).get("step"))
+    vol_close_extreme = _expand_range(_vol_p.get("close_extreme", VOL_EXPANSION_CONT_DEFAULTS["close_extreme"]), _vol_schema.get("close_extreme", {}).get("step"))
+    vol_body_min = _expand_range(_vol_p.get("body_min", VOL_EXPANSION_CONT_DEFAULTS["body_min"]), _vol_schema.get("body_min", {}).get("step"))
     vol_trend_map: list[tuple[str, object]] = []
     for tn in vol_trend_names:
         if tn == "none":

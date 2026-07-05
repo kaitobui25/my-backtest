@@ -15,6 +15,7 @@ from app.backtest.config import (
     REQUIRED_COLUMNS,
     TEST_START,
     dense_grid_for_timeframe,
+    normal_grid_for_timeframe,
 )
 from app.backtest.data_loader import load_ohlc
 from app.backtest.engine import calendar_days_ns
@@ -89,7 +90,9 @@ def evaluate_normal_timeframe(
     if max_signal_variants is not None:
         signals = signals[: int(max_signal_variants)]
 
-    sl_values, tp_values, max_holds = _grid(dense_grid_for_timeframe(timeframe), search_params)
+    grid_profile = search_params.get("grid_profile", "dense")
+    default_grid = dense_grid_for_timeframe(timeframe) if grid_profile == "dense" else normal_grid_for_timeframe(timeframe)
+    sl_values, tp_values, max_holds = _grid(default_grid, search_params)
     min_full_trades = int(np.ceil(days * search_params.get("min_trades_per_day", 0.33)))
     min_test_trades = int(np.ceil(test_days * search_params.get("min_test_trades_per_day", 0.33)))
     explicit_min_full = _filter_value(search_params, "min_full_trades", None, timeframe)

@@ -502,7 +502,7 @@ async function handleSave() {
   }
 
   const payloadMeta = state.lastRunPayload;
-  const search_params = buildSearchParams();
+  const search_params = payloadMeta?.search_params || buildSearchParams();
   const metadata = {
     symbol: payloadMeta ? payloadMeta.symbol : "BTCUSD",
     timeframes: payloadMeta ? payloadMeta.timeframes : state.selectedTimeframes,
@@ -586,6 +586,15 @@ async function handleLoadSavedRun(runId) {
           state.strategySettings[strat] = settings;
         }
       }
+    }
+
+    const savedStrats = Object.keys(state.strategySettings);
+    if (savedStrats.length > 0) {
+      state.activeStrategy = savedStrats[0];
+    } else if (state.selectedStrategies.length > 0) {
+      state.activeStrategy = state.selectedStrategies[0];
+    } else {
+      state.activeStrategy = null;
     }
 
     renderAll();
