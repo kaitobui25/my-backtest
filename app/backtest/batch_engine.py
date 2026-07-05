@@ -18,6 +18,7 @@ def _metrics_numba(
     equity = 1.0
     peak = 1.0
     max_dd = 0.0
+    has_first = False
 
     for j in range(count):
         r = returns[j]
@@ -28,6 +29,9 @@ def _metrics_numba(
             loss_count += 1
             loss_sum += r
         equity *= 1.0 + r
+        if not has_first:
+            peak = equity
+            has_first = True
         if equity > peak:
             peak = equity
         dd = equity / peak - 1.0

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.backtest.config import REQUIRED_COLUMNS
 from app.main import app
 from app.services.saved_store import _safe_path, delete_run, list_saved_runs, load_run, save_run
 
@@ -385,3 +386,69 @@ class TestAPI:
         assert "finished_at" in t
         assert isinstance(t["duration_sec"], (int, float))
         assert t["duration_sec"] >= 0
+
+    def test_backtest_response_structure(self):
+        r = self.client.post("/api/backtest", json={
+            "timeframes": ["M15"],
+            "mode": "normal",
+            "strategies": ["VOL_EXPANSION_CONT"],
+            "filters": [{"field": "win_rate", "op": ">=", "value": "0"}],
+            "limit": 5,
+        })
+        assert r.status_code == 200
+        body = r.json()
+        assert "run_temp_id" in body
+        assert isinstance(body["run_temp_id"], str)
+        assert "row_count" in body
+        assert isinstance(body["row_count"], int)
+        assert "columns" in body
+        assert isinstance(body["columns"], list)
+        assert "rows" in body
+        assert isinstance(body["rows"], list)
+        assert "timing" in body
+        assert body["row_count"] == len(body["rows"])
+        assert body["row_count"] <= 5
+
+    def test_backtest_columns_contain_required(self):
+        r = self.client.post("/api/backtest", json={
+            "timeframes": ["M15"],
+            "mode": "normal",
+            "filters": [{"field": "win_rate", "op": ">=", "value": "0"}],
+            "limit": 5,
+        })
+        assert r.status_code == 200
+        body = r.json()
+        for col in REQUIRED_COLUMNS:
+            assert col in body["columns"], f"Missing column: {col}"
+
+    def test_backtest_filter_works(self):
+        r = self.client.post("/api/backtest", json={
+            "timeframes": ["M15"],
+            "mode": "normal",
+            "filters": [{"field": "profit_factor", "op": ">=", "value": "999"}],
+            "limit": 500,
+        })
+        assert r.status_code == 200
+        body = r.json()
+        assert body["row_count"] == 0
+
+    def test_backtest_limit_works(self):
+        r = self.client.post("/api/backtest", json={
+            "timeframes": ["M15"],
+            "mode": "normal",
+            "filters": [{"field": "win_rate", "op": ">=", "value": "0"}],
+            "limit": 3,
+        })
+        assert r.status_code == 200
+        body = r.json()
+        assert body["row_count"] <= 3
+
+    def test_backtest_max_signal_variants(self):
+        r = self.client.post("/api/backtest", json={
+            "timeframes": ["M15"],
+            "mode": "normal",
+            "search_params": {"max_signal_variants": 1},
+            "filters": [{"field": "win_rate", "op": ">=", "value": "0"}],
+            "limit": 5,
+        })
+        assert r.status_code == 200

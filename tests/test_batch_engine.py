@@ -383,3 +383,101 @@ def test_tp_filter_handled():
     )
     assert tr[0] == 0, "tp too small should produce 0 trades"
     assert tr[1] > 0, "valid tp should produce trades"
+
+
+def test_normal_same_candle_sl_wins_over_tp():
+    n = 20
+    open_ = np.full(n, 100.0, dtype=np.float64)
+    high = np.full(n, 106.0, dtype=np.float64)
+    low = np.full(n, 94.0, dtype=np.float64)
+    close = np.full(n, 100.0, dtype=np.float64)
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[0] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    sl, tp = 0.05, 0.05
+    fee = 0.0
+    test_start = 5
+
+    old = _run_old_normal(open_, high, low, close, longs, shorts, sl, tp, 0, fee, test_start)
+    configs = build_config_grid([sl], [tp], [0])
+    new = _batched_normal_result(open_, high, low, close, longs, shorts, configs, fee, test_start)
+    _assert_close(old, new, _NORMAL_KEYS)
+    assert new["trades"] == 1
+    sl_entry = 100.0
+    sl_price = sl_entry * (1.0 - sl)
+    expected_return = (sl_price / sl_entry - 1.0) * 100
+    assert abs(new["total_return"] - expected_return) < 1e-9
+
+
+def test_dense_same_candle_sl_wins_over_tp():
+    n = 20
+    open_ = np.full(n, 100.0, dtype=np.float64)
+    high = np.full(n, 106.0, dtype=np.float64)
+    low = np.full(n, 94.0, dtype=np.float64)
+    close = np.full(n, 100.0, dtype=np.float64)
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[0] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    index_ns = _synthetic_index(n)
+    sl, tp = 0.05, 0.05
+    fee = 0.0
+    test_start_idx = 5
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+
+    old = _run_old_dense(open_, high, low, close, longs, shorts, sl, tp, 0, fee, test_start_idx, index_ns, days, test_days)
+    configs = build_config_grid([sl], [tp], [0])
+    new = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
+    _assert_close(old, new, _DENSE_KEYS)
+    assert new["trades"] == 1
+    sl_entry = 100.0
+    sl_price = sl_entry * (1.0 - sl)
+    expected_return = (sl_price / sl_entry - 1.0) * 100
+    assert abs(new["total_return"] - expected_return) < 1e-9
+
+
+def test_final_bar_forced_exit_normal():
+    n = 10
+    open_ = np.full(n, 100.0, dtype=np.float64)
+    high = np.full(n, 101.0, dtype=np.float64)
+    low = np.full(n, 99.0, dtype=np.float64)
+    close = np.arange(100.0, 110.0, dtype=np.float64)
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[0] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    fee = 0.0
+    test_start = 5
+    sl, tp = 0.5, 0.5
+
+    old = _run_old_normal(open_, high, low, close, longs, shorts, sl, tp, 0, fee, test_start)
+    configs = build_config_grid([sl], [tp], [0])
+    new = _batched_normal_result(open_, high, low, close, longs, shorts, configs, fee, test_start)
+    _assert_close(old, new, _NORMAL_KEYS)
+    assert new["trades"] == 1
+    expected_ret = (close[-1] / open_[0] - 1.0) * 100
+    assert abs(new["total_return"] - expected_ret) < 1e-9
+
+
+def test_final_bar_forced_exit_dense():
+    n = 10
+    open_ = np.full(n, 100.0, dtype=np.float64)
+    high = np.full(n, 101.0, dtype=np.float64)
+    low = np.full(n, 99.0, dtype=np.float64)
+    close = np.arange(100.0, 110.0, dtype=np.float64)
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[0] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    index_ns = _synthetic_index(n)
+    fee = 0.0
+    test_start_idx = 5
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    sl, tp = 0.5, 0.5
+
+    old = _run_old_dense(open_, high, low, close, longs, shorts, sl, tp, 0, fee, test_start_idx, index_ns, days, test_days)
+    configs = build_config_grid([sl], [tp], [0])
+    new = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
+    _assert_close(old, new, _DENSE_KEYS)
+    assert new["trades"] == 1
+    expected_ret = (close[-1] / open_[0] - 1.0) * 100
+    assert abs(new["total_return"] - expected_ret) < 1e-9
