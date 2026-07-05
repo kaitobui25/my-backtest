@@ -14,12 +14,16 @@ function initTable() {
   document.getElementById("table-container").addEventListener("change", e => {
     if (e.target.dataset.col) toggleColumn(e.target.dataset.col);
   });
+  loadPrefs();
 }
 
 function renderTable(response) {
   state.columns = response.columns;
   state.rows = response.rows;
-  state.columnVisibility = {};
+  const oldVis = state.columnVisibility;
+  state.columnVisibility = Object.fromEntries(
+    response.columns.map(col => [col, oldVis[col]])
+  );
   state.sortCol = null;
   state.sortDir = "asc";
   state.rowSelect = {};
@@ -180,6 +184,7 @@ function toggleColumn(col) {
   state.columnVisibility[col] = state.columnVisibility[col] === false ? true : false;
   renderColumnChooser();
   renderTableContent();
+  savePrefs();
 }
 
 function handleSearch() {
@@ -213,16 +218,41 @@ function getSelectedRows() {
 function csvEscape(v) {
   if (v == null) return "";
   const s = String(v);
-  return s.includes(",") || s.includes('"') || s.includes("\n")
-    ? '"' + s.replace(/"/g, '""') + '"'
-    : s;
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function tsvEscape(v) {
+  if (v == null) return "";
+  const s = String(v);
+  if (s.includes("\t") || s.includes("\n") || s.includes('"')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function buildFilename() {
+  const now = new Date();
+  const ts = now.getFullYear() +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0") + "_" +
+    String(now.getHours()).padStart(2, "0") +
+    String(now.getMinutes()).padStart(2, "0") +
+    String(now.getSeconds()).padStart(2, "0");
+  const tfs = (state.selectedTimeframes || []).join("_");
+  const mode = state.mode || "normal";
+  let symbol = "BTCUSD";
+  if (state.lastRunPayload) symbol = state.lastRunPayload.symbol;
+  return symbol + "_" + mode + (tfs ? "_" + tfs : "") + "_" + ts + ".csv";
 }
 
 function copySelected() {
   const rows = getSelectedRows();
-  if (rows.length === 0) { alert("No rows selected"); return; }
+  if (rows.length === 0) { showStatus("No rows selected"); return; }
   const cols = getVisibleColumns();
-  const lines = rows.map(row => cols.map(col => csvEscape(row[col])).join("\t"));
+  const lines = rows.map(row => cols.map(col => tsvEscape(row[col])).join("\t"));
   const tsv = cols.join("\t") + "\n" + lines.join("\n");
 
   navigator.clipboard.writeText(tsv).then(() => {
@@ -259,7 +289,7 @@ function exportCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "backtest_results.csv";
+  a.download = buildFilename();
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -270,6 +300,32 @@ function exportCSV() {
 function changeFontSize(delta) {
   state.fontSize = Math.max(9, Math.min(24, state.fontSize + delta));
   document.getElementById("result-table").style.fontSize = state.fontSize + "px";
+  savePrefs();
+}
+
+function savePrefs() {
+  try {
+    localStorage.setItem("my-backtest.columnVisibility", JSON.stringify(state.columnVisibility));
+    localStorage.setItem("my-backtest.tableFontSize", String(state.fontSize));
+  } catch (_) {}
+}
+
+function loadPrefs() {
+  try {
+    const cv = localStorage.getItem("my-backtest.columnVisibility");
+    if (cv) {
+      const parsed = JSON.parse(cv);
+      if (typeof parsed === "object" && !Array.isArray(parsed)) {
+        Object.assign(state.columnVisibility, parsed);
+      }
+    }
+    const fs = localStorage.getItem("my-backtest.tableFontSize");
+    if (fs) {
+      const n = parseInt(fs, 10);
+      if (!isNaN(n) && n >= 9 && n <= 24) state.fontSize = n;
+    }
+    document.getElementById("result-table").style.fontSize = state.fontSize + "px";
+  } catch (_) {}
 }
 
 function updateResultCount() {

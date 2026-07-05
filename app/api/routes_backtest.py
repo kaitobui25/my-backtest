@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from datetime import date, datetime
+import time
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import numpy as np
@@ -10,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.encoders import jsonable_encoder
 
 from app.api.routes_options import FILTER_FIELDS, INDICATORS, MODES, OPERATORS, TIMEFRAMES
-from app.api.schemas import BacktestRequest, BacktestResponse, ResultFilter
+from app.api.schemas import BacktestRequest, BacktestResponse, ResultFilter, TimingInfo
 from app.backtest.config import SYMBOL
 from app.backtest.runner import run_search
 
@@ -96,12 +97,23 @@ def dataframe_to_rows(df: pd.DataFrame) -> list[dict]:
 def run_backtest(request: BacktestRequest) -> BacktestResponse:
     validate_request(request)
 
+    started_at = datetime.now(timezone.utc)
+    t0 = time.perf_counter()
+
     df = run_search(timeframes=request.timeframes, mode=request.mode)
     df = apply_filters(df, request)
+
+    finished_at = datetime.now(timezone.utc)
+    duration_sec = round(time.perf_counter() - t0, 4)
 
     return BacktestResponse(
         run_temp_id=str(uuid4()),
         row_count=len(df),
         columns=list(df.columns),
         rows=dataframe_to_rows(df),
+        timing=TimingInfo(
+            started_at=started_at.isoformat(),
+            finished_at=finished_at.isoformat(),
+            duration_sec=duration_sec,
+        ),
     )

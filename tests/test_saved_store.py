@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 from pathlib import Path
 
@@ -298,3 +300,88 @@ class TestAPI:
         (saved_dir / "corrupt.json").write_text("not json", encoding="utf-8")
         r = self.client.get("/api/saved-runs/corrupt")
         assert r.status_code == 404
+
+    # ------------------------------------------------------------------
+    # CSV export
+    # ------------------------------------------------------------------
+
+    def test_export_csv_success(self):
+        run_id = self._create_run()
+        r = self.client.get(f"/api/saved-runs/{run_id}/export.csv")
+        assert r.status_code == 200
+        assert "text/csv" in r.headers.get("content-type", "")
+        content = r.content.decode("utf-8-sig")
+        assert "col1" in content
+        assert "selected" in content
+        assert "rating" in content
+        assert "note" in content
+
+    def test_export_csv_missing(self):
+        r = self.client.get("/api/saved-runs/does-not-exist/export.csv")
+        assert r.status_code == 404
+
+    def test_export_csv_review_fields(self):
+        payload = {
+            "columns": ["col1"],
+            "rows": [{"col1": "val1"}],
+            "ratings": {"0": 5},
+            "selectedRows": {"0": True},
+            "rowNotes": {"0": "nice"},
+            "metadata": {"symbol": "BTCUSD"},
+        }
+        r = self.client.post("/api/saved-runs", json=payload)
+        run_id = r.json()["run_id"]
+        r = self.client.get(f"/api/saved-runs/{run_id}/export.csv")
+        content = r.content.decode("utf-8-sig")
+        reader = csv.reader(io.StringIO(content))
+        rows = list(reader)
+        assert rows[0] == ["col1", "selected", "rating", "note"]
+        assert rows[1] == ["val1", "yes", "5", "nice"]
+
+    def test_export_csv_path_traversal(self):
+        r = self.client.get("/api/saved-runs/../../etc/passwd/export.csv")
+        assert r.status_code == 404
+
+    def test_export_csv_corrupt(self, saved_dir):
+        (saved_dir / "corrupt.json").write_text("not json", encoding="utf-8")
+        r = self.client.get("/api/saved-runs/corrupt/export.csv")
+        assert r.status_code == 404
+
+    # ------------------------------------------------------------------
+    # Backtest timing
+    # ------------------------------------------------------------------
+
+    def test_backtest_invalid_timeframe(self):
+        r = self.client.post("/api/backtest", json={
+            "timeframes": ["M3"],
+            "mode": "normal",
+            "limit": 5,
+        })
+        assert r.status_code == 400
+        assert "Invalid timeframe" in r.json()["detail"]
+
+    def test_backtest_invalid_mode(self):
+        r = self.client.post("/api/backtest", json={
+            "timeframes": ["M15"],
+            "mode": "invalid_mode",
+            "limit": 5,
+        })
+        assert r.status_code == 400
+        assert "Unsupported mode" in r.json()["detail"]
+
+    def test_backtest_timing(self):
+        r = self.client.post("/api/backtest", json={
+            "timeframes": ["M15"],
+            "mode": "normal",
+            "strategies": ["VOL_EXPANSION_CONT"],
+            "filters": [{"field": "win_rate", "op": ">=", "value": "0"}],
+            "limit": 5,
+        })
+        assert r.status_code == 200
+        body = r.json()
+        assert "timing" in body
+        t = body["timing"]
+        assert "started_at" in t
+        assert "finished_at" in t
+        assert isinstance(t["duration_sec"], (int, float))
+        assert t["duration_sec"] >= 0

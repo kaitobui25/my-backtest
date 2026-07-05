@@ -27,6 +27,8 @@ const state = {
   dirty: false,
   loadedFromSave: false,
   lastRunPayload: null,
+  lastTiming: null,
+  runningStartTime: null,
 };
 
 function setState(updates) {

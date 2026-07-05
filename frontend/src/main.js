@@ -11,7 +11,7 @@ async function init() {
     bindEvents();
     refreshSavedRuns();
   } catch (e) {
-    showError("Failed to load options: " + e.message);
+    showError("Failed to load options: " + parseApiError(e));
   }
 }
 
@@ -81,14 +81,36 @@ function populateFilterAddControls() {
     state.operators.map(o => `<option value="${o}">${o}</option>`).join("");
 }
 
+let timerInterval = null;
+
 function updateRunButton() {
   const btn = document.getElementById("btn-run");
+  const saveBtn = document.getElementById("btn-save");
   const statusText = document.getElementById("status-text");
-  btn.disabled = state.selectedTimeframes.length === 0 || state.loading;
-  btn.textContent = state.loading ? "Running..." : "Run Backtest";
-  if (state.loading) {
+  const loading = state.loading;
+  btn.disabled = state.selectedTimeframes.length === 0 || loading;
+  saveBtn.disabled = loading;
+  btn.textContent = loading ? "Running..." : "Run Backtest";
+  if (loading) {
     statusText.textContent = "Running backtest...";
   }
+}
+
+function startTimer() {
+  state.runningStartTime = Date.now();
+  const statusText = document.getElementById("status-text");
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    if (!state.loading) { clearInterval(timerInterval); return; }
+    const elapsed = ((Date.now() - state.runningStartTime) / 1000).toFixed(1);
+    statusText.textContent = "Running backtest... " + elapsed + "s";
+  }, 200);
+}
+
+function stopTimer() {
+  clearInterval(timerInterval);
+  timerInterval = null;
+  state.runningStartTime = null;
 }
 
 function showStatus(msg) {
@@ -162,14 +184,35 @@ function removeFilter(idx) {
   renderFilters();
 }
 
+function isHeavyRequest() {
+  const tfCount = state.selectedTimeframes.length;
+  const stratCount = state.selectedStrategies.length || 10;
+  const mode = state.mode;
+  let score = tfCount * stratCount;
+  if (mode === "dense_high_winrate") score *= 2;
+  return score >= 40;
+}
+
 async function handleRun() {
   if (state.selectedTimeframes.length === 0) {
     showError("Select at least one timeframe");
     return;
   }
-  setState({ loading: true });
+
+  if (isHeavyRequest()) {
+    const tfStr = state.selectedTimeframes.join(", ");
+    const stratStr = state.selectedStrategies.length > 0 ? state.selectedStrategies.join(", ") : "all";
+    const msg = `This request may take a while:\n\nTimeframes: ${tfStr}\nStrategies: ${stratStr}\nMode: ${state.mode}\n\nContinue?`;
+    if (!confirm(msg)) return;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   hideError();
+  setState({ loading: true });
   updateRunButton();
+  startTimer();
 
   try {
     const filters = state.filters
@@ -189,24 +232,30 @@ async function handleRun() {
       limit: 500,
     };
 
-    const result = await runBacktestAPI(payload);
+    const result = await runBacktestAPI(payload, controller.signal);
     state.columns = result.columns;
     state.rows = result.rows;
     state.currentRunId = null;
     state.currentRunMeta = null;
     state.loadedFromSave = false;
     state.lastRunPayload = payload;
+    state.lastTiming = result.timing || null;
     state.rowNotes = {};
     state.dirty = false;
     updateDirtyIndicator();
-    showStatus(`Done — ${result.row_count} rows`);
+
+    const timing = result.timing;
+    const durationStr = timing ? " — " + timing.duration_sec.toFixed(2) + "s" : "";
+    showStatus(`Done — ${result.row_count} rows${durationStr}`);
     renderTable(result);
   } catch (e) {
-    showError(e.message);
+    showError(parseApiError(e));
     showStatus("Error");
   } finally {
+    clearTimeout(timeoutId);
     setState({ loading: false });
     updateRunButton();
+    stopTimer();
   }
 }
 
@@ -284,6 +333,7 @@ async function handleSave() {
     row_count: state.rows.length,
     note: "",
   };
+  if (state.lastTiming) metadata.timing = state.lastTiming;
 
   const payload = {
     columns: state.columns,
@@ -303,7 +353,7 @@ async function handleSave() {
     showStatus("Saved");
     refreshSavedRuns();
   } catch (e) {
-    showError(e.message);
+    showError(parseApiError(e));
   }
 }
 
@@ -315,7 +365,10 @@ async function handleLoadSavedRun(runId) {
     state.ratings = data.ratings || {};
     state.rowSelect = data.selectedRows || {};
     state.rowNotes = data.rowNotes || {};
-    state.columnVisibility = {};
+    const oldVis = state.columnVisibility;
+    state.columnVisibility = Object.fromEntries(
+      data.columns.map(col => [col, oldVis[col]])
+    );
     state.sortCol = null;
     state.sortDir = "asc";
     state.searchText = "";
@@ -334,6 +387,7 @@ async function handleLoadSavedRun(runId) {
 
     state.currentRunId = runId;
     state.currentRunMeta = meta;
+    state.lastTiming = meta.timing || null;
     state.loadedFromSave = true;
     state.dirty = false;
     updateDirtyIndicator();
@@ -341,14 +395,26 @@ async function handleLoadSavedRun(runId) {
     renderAll();
     renderColumnChooser();
     renderTableContent();
-    showStatus("Loaded saved run");
+
+    const tfs = (meta.timeframes || []).join(",");
+    const rowsInfo = data.rows ? " — " + data.rows.length + " rows" : "";
+    showStatus("Loaded saved run" + (tfs ? " — " + tfs : "") + rowsInfo);
   } catch (e) {
-    showError(e.message);
+    showError(parseApiError(e));
   }
 }
 
 async function handleDeleteSavedRun(runId) {
-  if (!confirm("Delete this saved run?")) return;
+  const meta = state.savedRuns.find(r => r.run_id === runId);
+  let msg = "Delete this saved run?";
+  if (meta) {
+    const parts = [];
+    if (meta.created_at) parts.push("Created: " + meta.created_at.slice(0, 19).replace("T", " "));
+    if (meta.timeframes && meta.timeframes.length) parts.push("Timeframes: " + meta.timeframes.join(", "));
+    if (meta.row_count) parts.push("Rows: " + meta.row_count);
+    if (parts.length) msg += "\n\n" + parts.join("\n");
+  }
+  if (!confirm(msg)) return;
   try {
     await deleteSavedRun(runId);
     if (state.currentRunId === runId) {
@@ -359,7 +425,7 @@ async function handleDeleteSavedRun(runId) {
     refreshSavedRuns();
     showStatus("Deleted saved run");
   } catch (e) {
-    showError(e.message);
+    showError(parseApiError(e));
   }
 }
 

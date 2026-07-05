@@ -20,8 +20,15 @@ class BacktestRequest(BaseModel):
     limit: int = 500
 
 
+class TimingInfo(BaseModel):
+    started_at: str
+    finished_at: str
+    duration_sec: float
+
+
 class BacktestResponse(BaseModel):
     run_temp_id: str
     row_count: int
     columns: list[str]
     rows: list[dict[str, Any]]
+    timing: TimingInfo | None = None
