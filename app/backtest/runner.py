@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from itertools import product
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from app.backtest.batch_engine import simulate_many_configs_summary, simulate_many_configs_with_entries_summary
 from app.backtest.config import (
     DENSE_MIN_TEST_TRADES_PER_DAY,
     DENSE_MIN_TEST_WIN_RATE,
@@ -22,8 +22,10 @@ from app.backtest.config import (
     normal_grid_for_timeframe,
 )
 from app.backtest.data_loader import load_ohlc
-from app.backtest.engine import calendar_days_ns, max_gap_days_ns, simulate_trades, simulate_trades_with_entries
-from app.backtest.metrics import metrics, score_candidate, score_dense_candidate
+from app.backtest.engine import calendar_days_ns
+from app.backtest.grid import build_config_grid
+
+from app.backtest.result_builder import batch_to_dense_rows, batch_to_normal_rows
 from app.backtest.signals import build_signal_variants, side_mode_arrays
 
 
@@ -80,7 +82,7 @@ def evaluate_normal_timeframe(
     high = df["high"].to_numpy(np.float64)
     low = df["low"].to_numpy(np.float64)
     close = df["close"].to_numpy(np.float64)
-    is_test_exit = df.index.to_numpy() >= np.datetime64(TEST_START)
+    test_start_idx = int(np.searchsorted(df.index.to_numpy(), np.datetime64(TEST_START), side="left"))
 
     signals = build_signal_variants(df=df, timeframe=timeframe, mode="normal", strategies=strategies)
     max_signal_variants = search_params.get("max_signal_variants")
@@ -102,49 +104,24 @@ def evaluate_normal_timeframe(
             longs, shorts = side_mode_arrays(signal.long_entries, signal.short_entries, side_mode)
             if longs.sum() + shorts.sum() < 8:
                 continue
-            for sl, tp, max_hold in product(sl_values, tp_values, max_holds):
-                if tp <= 2.5 * FEE_PER_SIDE:
-                    continue
-                returns, exits = simulate_trades(open_, high, low, close, longs, shorts, sl, tp, FEE_PER_SIDE, max_hold)
-                trades, wr, total_ret, pf, exp, max_dd, avg_win, avg_loss = metrics(returns)
-                if trades < min_full_trades or total_ret <= 0 or pf < min_profit_factor or exp <= 0:
-                    continue
-                test_returns = returns[is_test_exit[exits]]
-                test_trades, test_wr, test_ret, test_pf, test_exp, _, _, _ = metrics(test_returns)
-                if (
-                    test_trades < min_test_trades
-                    or test_ret <= 0
-                    or test_pf < min_test_profit_factor
-                    or test_exp <= 0
-                    or test_wr < min_test_win_rate
-                ):
-                    continue
-                score = score_candidate(wr, total_ret, pf, exp, max_dd, trades, test_wr, test_ret, test_pf, test_exp)
-                rows.append(
-                    {
-                        "timeframe": timeframe,
-                        "strategy": signal.strategy,
-                        "params": signal.params,
-                        "side_mode": side_mode,
-                        "sl": sl,
-                        "tp": tp,
-                        "max_hold": max_hold,
-                        "trades": trades,
-                        "win_rate": wr,
-                        "total_return": total_ret,
-                        "profit_factor": pf,
-                        "expectancy": exp,
-                        "max_drawdown": max_dd,
-                        "avg_win": avg_win,
-                        "avg_loss": avg_loss,
-                        "test_trades": test_trades,
-                        "test_win_rate": test_wr,
-                        "test_total_return": test_ret,
-                        "test_profit_factor": test_pf,
-                        "test_expectancy": test_exp,
-                        "score": score,
-                    }
+            sl_arr, tp_arr, mh_arr = build_config_grid(sl_values, tp_values, max_holds)
+            (
+                tr_arr, wr_arr, tre_arr, pf_arr, exp_arr, mdd_arr, aw_arr, al_arr,
+                ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
+            ) = simulate_many_configs_summary(
+                open_, high, low, close, longs, shorts,
+                sl_arr, tp_arr, mh_arr, FEE_PER_SIDE, test_start_idx,
+            )
+            rows.extend(
+                batch_to_normal_rows(
+                    sl_arr, tp_arr, mh_arr,
+                    tr_arr, wr_arr, tre_arr, pf_arr, exp_arr, mdd_arr, aw_arr, al_arr,
+                    ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
+                    timeframe, signal.strategy, signal.params, side_mode,
+                    min_full_trades, min_test_trades, min_test_win_rate,
+                    min_profit_factor, min_test_profit_factor,
                 )
+            )
 
     return _result_frame(rows, ["score", "test_profit_factor", "test_total_return"])
 
@@ -162,6 +139,7 @@ def evaluate_dense_timeframe(
     low = df["low"].to_numpy(np.float64)
     close = df["close"].to_numpy(np.float64)
     index_ns = df.index.astype("datetime64[ns]").asi8.astype(np.int64, copy=False)
+    test_start_idx = int(np.searchsorted(df.index.to_numpy(), np.datetime64(TEST_START), side="left"))
     is_test_exit = index_ns >= np.datetime64(TEST_START).astype("datetime64[ns]").astype(np.int64)
     days = calendar_days_ns(index_ns)
     test_days = calendar_days_ns(index_ns, is_test_exit)
@@ -185,81 +163,28 @@ def evaluate_dense_timeframe(
             longs, shorts = side_mode_arrays(signal.long_entries, signal.short_entries, side_mode)
             if longs.sum() + shorts.sum() < min_trades:
                 continue
-            for sl, tp, max_hold in product(sl_values, tp_values, max_holds):
-                if tp <= 2.5 * FEE_PER_SIDE:
-                    continue
-                returns, entries, exits, bars_held = simulate_trades_with_entries(
-                    open_, high, low, close, longs, shorts, sl, tp, FEE_PER_SIDE, max_hold
+            sl_arr, tp_arr, mh_arr = build_config_grid(sl_values, tp_values, max_holds)
+            (
+                tr_arr, wr_arr, tre_arr, pf_arr, exp_arr, mdd_arr, aw_arr, al_arr,
+                tpd_arr, mgd_arr, abh_arr,
+                ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
+                ttpd_arr, tmgd_arr, tabh_arr,
+            ) = simulate_many_configs_with_entries_summary(
+                open_, high, low, close, longs, shorts,
+                sl_arr, tp_arr, mh_arr, FEE_PER_SIDE,
+                test_start_idx, index_ns, days, test_days,
+            )
+            rows.extend(
+                batch_to_dense_rows(
+                    sl_arr, tp_arr, mh_arr,
+                    tr_arr, wr_arr, tre_arr, pf_arr, exp_arr, mdd_arr, aw_arr, al_arr,
+                    tpd_arr, mgd_arr, abh_arr,
+                    ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
+                    ttpd_arr, tmgd_arr, tabh_arr,
+                    timeframe, signal.strategy, signal.params, side_mode,
+                    min_trades, min_win_rate, min_test_trades, min_test_win_rate,
                 )
-                trades, wr, total_ret, pf, exp, max_dd, avg_win, avg_loss = metrics(returns)
-                if (
-                    trades < min_trades
-                    or wr < min_win_rate
-                    or total_ret <= 0
-                    or pf < 1.0
-                    or exp <= 0
-                ):
-                    continue
-
-                test_mask = is_test_exit[exits]
-                test_returns = returns[test_mask]
-                test_entries = entries[test_mask]
-                test_bars_held = bars_held[test_mask]
-                test_trades, test_wr, test_ret, test_pf, test_exp, _, _, _ = metrics(test_returns)
-                if (
-                    test_trades < min_test_trades
-                    or test_wr < min_test_win_rate
-                    or test_ret <= 0
-                    or test_pf < 1.0
-                    or test_exp <= 0
-                ):
-                    continue
-
-                safe_test_days = test_days if test_days > 0 else 1
-                row = {
-                    "win_rate": wr,
-                    "profit_factor": pf,
-                    "expectancy": exp,
-                    "test_win_rate": test_wr,
-                    "test_total_return": test_ret,
-                    "test_profit_factor": test_pf,
-                    "test_expectancy": test_exp,
-                    "max_drawdown": max_dd,
-                    "test_trades_per_day": test_trades / safe_test_days,
-                }
-                safe_days = days if days > 0 else 1
-                safe_test_days = test_days if test_days > 0 else 1
-                rows.append(
-                    {
-                        "timeframe": timeframe,
-                        "strategy": signal.strategy,
-                        "params": signal.params,
-                        "side_mode": side_mode,
-                        "sl": sl,
-                        "tp": tp,
-                        "max_hold": max_hold,
-                        "trades": trades,
-                        "win_rate": wr,
-                        "total_return": total_ret,
-                        "profit_factor": pf,
-                        "expectancy": exp,
-                        "max_drawdown": max_dd,
-                        "avg_win": avg_win,
-                        "avg_loss": avg_loss,
-                        "trades_per_day": trades / safe_days,
-                        "max_gap_days": max_gap_days_ns(index_ns, entries),
-                        "avg_bars_held": float(np.mean(bars_held)) if bars_held.size else np.nan,
-                        "test_trades": test_trades,
-                        "test_win_rate": test_wr,
-                        "test_total_return": test_ret,
-                        "test_profit_factor": test_pf,
-                        "test_expectancy": test_exp,
-                        "test_trades_per_day": test_trades / safe_test_days,
-                        "test_max_gap_days": max_gap_days_ns(index_ns, test_entries),
-                        "test_avg_bars_held": float(np.mean(test_bars_held)) if test_bars_held.size else np.nan,
-                        "score": score_dense_candidate(row),
-                    }
-                )
+            )
 
     return _result_frame(rows, ["score", "test_total_return", "test_profit_factor"])
 

@@ -3,7 +3,6 @@
 ## Scope
 
 - Focus only on backend source code in `kaitobui25/my-backtest`.
-- Do not use or modify old script files `01/02/03`.
 - Do not switch to vectorbt API.
 - Do not change frontend API contract.
 - Do not change `/api/backtest` request/response format.
