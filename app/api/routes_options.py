@@ -29,6 +29,8 @@ FILTER_FIELDS = [
     "test_total_return",
     "test_profit_factor",
     "score",
+    "trades_per_day",
+    "test_trades_per_day",
 ]
 OPERATORS = [">", ">=", "<", "<=", "=", "~"]
 
