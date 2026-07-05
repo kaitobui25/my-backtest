@@ -100,7 +100,12 @@ def run_backtest(request: BacktestRequest) -> BacktestResponse:
     started_at = datetime.now(timezone.utc)
     t0 = time.perf_counter()
 
-    df = run_search(timeframes=request.timeframes, mode=request.mode)
+    df = run_search(
+        timeframes=request.timeframes,
+        mode=request.mode,
+        strategies=request.strategies,
+        search_params=request.search_params,
+    )
     df = apply_filters(df, request)
 
     finished_at = datetime.now(timezone.utc)

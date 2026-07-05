@@ -16,6 +16,7 @@ class BacktestRequest(BaseModel):
     timeframes: list[str] = Field(default_factory=lambda: ["M15"])
     mode: str = "normal"
     strategies: list[str] | None = None
+    search_params: dict[str, Any] | None = None
     filters: list[ResultFilter] = Field(default_factory=list)
     limit: int = 500
 

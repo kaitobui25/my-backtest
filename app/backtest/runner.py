@@ -24,7 +24,7 @@ from app.backtest.config import (
 from app.backtest.data_loader import load_ohlc
 from app.backtest.engine import calendar_days_ns, max_gap_days_ns, simulate_trades, simulate_trades_with_entries
 from app.backtest.metrics import metrics, score_candidate, score_dense_candidate
-from app.backtest.signals import build_signals, build_vol_expansion_signals, side_mode_arrays
+from app.backtest.signals import SignalVariant, build_signal_variants, side_mode_arrays
 
 
 def _filter_value(filters: dict[str, Any], key: str, default: Any, timeframe: str | None = None) -> Any:
@@ -55,16 +55,25 @@ def _result_frame(rows: list[dict[str, Any]], sort_cols: list[str] | None = None
     return df
 
 
-def evaluate_timeframe(timeframe: str, mode: str = "normal", filters: dict[str, Any] | None = None) -> pd.DataFrame:
+def evaluate_timeframe(
+    timeframe: str,
+    mode: str = "normal",
+    strategies: list[str] | set[str] | None = None,
+    search_params: dict[str, Any] | None = None,
+) -> pd.DataFrame:
     if mode == "normal":
-        return evaluate_normal_timeframe(timeframe, filters)
+        return evaluate_normal_timeframe(timeframe, strategies, search_params)
     if mode == "dense_high_winrate":
-        return evaluate_dense_timeframe(timeframe, filters)
+        return evaluate_dense_timeframe(timeframe, strategies, search_params)
     raise ValueError(f"Unsupported mode: {mode}")
 
 
-def evaluate_normal_timeframe(timeframe: str, filters: dict[str, Any] | None = None) -> pd.DataFrame:
-    filters = filters or {}
+def evaluate_normal_timeframe(
+    timeframe: str,
+    strategies: list[str] | set[str] | None = None,
+    search_params: dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    search_params = search_params or {}
     df = load_ohlc(timeframe)
 
     open_ = df["open"].to_numpy(np.float64)
@@ -73,24 +82,24 @@ def evaluate_normal_timeframe(timeframe: str, filters: dict[str, Any] | None = N
     close = df["close"].to_numpy(np.float64)
     is_test_exit = df.index.to_numpy() >= np.datetime64(TEST_START)
 
-    signals = build_signals(df, timeframe)
-    max_signal_variants = filters.get("max_signal_variants")
+    signals = build_signal_variants(df=df, timeframe=timeframe, mode="normal", strategies=strategies)
+    max_signal_variants = search_params.get("max_signal_variants")
     if max_signal_variants is not None:
         signals = signals[: int(max_signal_variants)]
 
-    sl_values, tp_values, max_holds = _grid(normal_grid_for_timeframe(timeframe), filters)
-    min_full_trades = _filter_value(filters, "min_full_trades", MIN_FULL_TRADES, timeframe)
-    min_test_trades = _filter_value(filters, "min_test_trades", MIN_TEST_TRADES, timeframe)
-    min_test_win_rate = filters.get("min_test_win_rate", 48)
-    min_profit_factor = filters.get("min_profit_factor", 1.05)
-    min_test_profit_factor = filters.get("min_test_profit_factor", 1.0)
+    sl_values, tp_values, max_holds = _grid(normal_grid_for_timeframe(timeframe), search_params)
+    min_full_trades = _filter_value(search_params, "min_full_trades", MIN_FULL_TRADES, timeframe)
+    min_test_trades = _filter_value(search_params, "min_test_trades", MIN_TEST_TRADES, timeframe)
+    min_test_win_rate = search_params.get("min_test_win_rate", 48)
+    min_profit_factor = search_params.get("min_profit_factor", 1.05)
+    min_test_profit_factor = search_params.get("min_test_profit_factor", 1.0)
 
     rows: list[dict[str, Any]] = []
-    for strategy, params, long_entries, short_entries, side_modes in signals:
-        if long_entries.sum() + short_entries.sum() < 8:
+    for signal in signals:
+        if signal.long_entries.sum() + signal.short_entries.sum() < 8:
             continue
-        for side_mode in side_modes:
-            longs, shorts = side_mode_arrays(long_entries, short_entries, side_mode)
+        for side_mode in signal.side_modes:
+            longs, shorts = side_mode_arrays(signal.long_entries, signal.short_entries, side_mode)
             if longs.sum() + shorts.sum() < 8:
                 continue
             for sl, tp, max_hold in product(sl_values, tp_values, max_holds):
@@ -114,8 +123,8 @@ def evaluate_normal_timeframe(timeframe: str, filters: dict[str, Any] | None = N
                 rows.append(
                     {
                         "timeframe": timeframe,
-                        "strategy": strategy,
-                        "params": params,
+                        "strategy": signal.strategy,
+                        "params": signal.params,
                         "side_mode": side_mode,
                         "sl": sl,
                         "tp": tp,
@@ -140,8 +149,12 @@ def evaluate_normal_timeframe(timeframe: str, filters: dict[str, Any] | None = N
     return _result_frame(rows, ["score", "test_profit_factor", "test_total_return"])
 
 
-def evaluate_dense_timeframe(timeframe: str, filters: dict[str, Any] | None = None) -> pd.DataFrame:
-    filters = filters or {}
+def evaluate_dense_timeframe(
+    timeframe: str,
+    strategies: list[str] | set[str] | None = None,
+    search_params: dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    search_params = search_params or {}
     df = load_ohlc(timeframe)
 
     open_ = df["open"].to_numpy(np.float64)
@@ -152,24 +165,24 @@ def evaluate_dense_timeframe(timeframe: str, filters: dict[str, Any] | None = No
     is_test_exit = index_ns >= np.datetime64(TEST_START).astype("datetime64[ns]").astype(np.int64)
     days = calendar_days_ns(index_ns)
     test_days = calendar_days_ns(index_ns, is_test_exit)
-    min_trades = int(np.ceil(days * filters.get("min_trades_per_day", DENSE_MIN_TRADES_PER_DAY)))
-    min_test_trades = int(np.ceil(test_days * filters.get("min_test_trades_per_day", DENSE_MIN_TEST_TRADES_PER_DAY)))
-    min_win_rate = filters.get("min_win_rate", DENSE_MIN_WIN_RATE)
-    min_test_win_rate = filters.get("min_test_win_rate", DENSE_MIN_TEST_WIN_RATE)
+    min_trades = int(np.ceil(days * search_params.get("min_trades_per_day", DENSE_MIN_TRADES_PER_DAY)))
+    min_test_trades = int(np.ceil(test_days * search_params.get("min_test_trades_per_day", DENSE_MIN_TEST_TRADES_PER_DAY)))
+    min_win_rate = search_params.get("min_win_rate", DENSE_MIN_WIN_RATE)
+    min_test_win_rate = search_params.get("min_test_win_rate", DENSE_MIN_TEST_WIN_RATE)
 
-    signals = build_vol_expansion_signals(df)
-    max_signal_variants = filters.get("max_signal_variants")
+    signals = build_signal_variants(df=df, timeframe=timeframe, mode="dense_high_winrate", strategies=strategies)
+    max_signal_variants = search_params.get("max_signal_variants")
     if max_signal_variants is not None:
         signals = signals[: int(max_signal_variants)]
 
-    sl_values, tp_values, max_holds = _grid(dense_grid_for_timeframe(timeframe), filters)
+    sl_values, tp_values, max_holds = _grid(dense_grid_for_timeframe(timeframe), search_params)
 
     rows: list[dict[str, Any]] = []
-    for params, long_entries, short_entries, side_modes in signals:
-        if long_entries.sum() + short_entries.sum() < min_trades:
+    for signal in signals:
+        if signal.long_entries.sum() + signal.short_entries.sum() < min_trades:
             continue
-        for side_mode in side_modes:
-            longs, shorts = side_mode_arrays(long_entries, short_entries, side_mode)
+        for side_mode in signal.side_modes:
+            longs, shorts = side_mode_arrays(signal.long_entries, signal.short_entries, side_mode)
             if longs.sum() + shorts.sum() < min_trades:
                 continue
             for sl, tp, max_hold in product(sl_values, tp_values, max_holds):
@@ -216,8 +229,8 @@ def evaluate_dense_timeframe(timeframe: str, filters: dict[str, Any] | None = No
                 rows.append(
                     {
                         "timeframe": timeframe,
-                        "strategy": "VOL_EXPANSION_CONT",
-                        "params": params,
+                        "strategy": signal.strategy,
+                        "params": signal.params,
                         "side_mode": side_mode,
                         "sl": sl,
                         "tp": tp,
@@ -251,12 +264,13 @@ def evaluate_dense_timeframe(timeframe: str, filters: dict[str, Any] | None = No
 def run_search(
     timeframes: list[str] | tuple[str, ...] | None = None,
     mode: str = "normal",
-    filters: dict[str, Any] | None = None,
+    strategies: list[str] | set[str] | None = None,
+    search_params: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
     if timeframes is None:
         timeframes = DENSE_TIMEFRAMES if mode == "dense_high_winrate" else NORMAL_TIMEFRAMES
 
-    frames = [evaluate_timeframe(timeframe, mode=mode, filters=filters) for timeframe in timeframes]
+    frames = [evaluate_timeframe(timeframe, mode=mode, strategies=strategies, search_params=search_params) for timeframe in timeframes]
     rows = [frame for frame in frames if not frame.empty]
     if not rows:
         return pd.DataFrame(columns=REQUIRED_COLUMNS)
