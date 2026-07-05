@@ -8,6 +8,8 @@ import pandas as pd
 from app.backtest.batch_engine import simulate_many_configs_with_entries_summary
 from app.backtest.config import (
     DENSE_MIN_TEST_WIN_RATE,
+    DENSE_MIN_TEST_TRADES_PER_DAY,
+    DENSE_MIN_TRADES_PER_DAY,
     DENSE_MIN_WIN_RATE,
     DENSE_TIMEFRAMES,
     FEE_PER_SIDE,
@@ -162,7 +164,8 @@ def evaluate_dense_timeframe(
     min_win_rate = search_params.get("min_win_rate", DENSE_MIN_WIN_RATE)
     min_test_win_rate = search_params.get("min_test_win_rate", DENSE_MIN_TEST_WIN_RATE)
 
-    signals = build_signal_variants(df=df, timeframe=timeframe, mode="dense_high_winrate", strategies=strategies)
+    strategy_params = search_params.get("strategy_params", {})
+    signals = build_signal_variants(df=df, timeframe=timeframe, mode="dense_high_winrate", strategies=strategies, strategy_params=strategy_params)
     max_signal_variants = search_params.get("max_signal_variants")
     if max_signal_variants is not None:
         signals = signals[: int(max_signal_variants)]

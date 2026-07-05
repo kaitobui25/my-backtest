@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from app.backtest.indicators import adx, atr, ema, macd, rsi, squeeze_momentum, supertrend, wavetrend, williams_vix_fix
-from app.backtest.strategy_params import VOL_EXPANSION_CONT_DEFAULTS, STRATEGY_PARAM_SCHEMAS
+from app.backtest.strategy_params import STRATEGY_PARAM_SCHEMAS
 
 
 Signal = tuple[str, str, np.ndarray, np.ndarray, tuple[str, ...]]
@@ -44,6 +44,40 @@ def _expand_range(value, step) -> list:
     return list(value) if isinstance(value, (list, tuple)) else [value]
 
 
+def _expand_select(value) -> list:
+    return list(value) if isinstance(value, (list, tuple)) else [value]
+
+
+def _params_for(strategy_name: str, strategy_params: dict | None) -> dict[str, list]:
+    user_params = (strategy_params or {}).get(strategy_name, {})
+    schema = STRATEGY_PARAM_SCHEMAS.get(strategy_name, {})
+    result: dict[str, list] = {}
+    for param, meta in schema.items():
+        value = user_params.get(param, list(meta["default"]))
+        if meta["type"] == "range":
+            result[param] = _expand_range(value, meta.get("step"))
+        else:
+            result[param] = _expand_select(value)
+    return result
+
+
+AUTO_TRENDS = ["none", "ema20", "ema50", "ema100", "ema200", "ema300"]
+
+
+def _resolve_trend_selection(trend_names: list[str]) -> list[str]:
+    if "auto" in trend_names:
+        expanded = [t for t in trend_names if t != "auto"]
+        expanded.extend(AUTO_TRENDS)
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for t in expanded:
+            if t not in seen:
+                seen.add(t)
+                deduped.append(t)
+        return deduped
+    return trend_names
+
+
 def build_signals(df: pd.DataFrame, timeframe: str, strategy_params: dict | None = None) -> list[Signal]:
     close = df["close"]
     open_ = df["open"]
@@ -64,128 +98,148 @@ def build_signals(df: pd.DataFrame, timeframe: str, strategy_params: dict | None
     vol_ma = volume.rolling(50, min_periods=50).mean()
     vol_ok = volume >= vol_ma
 
+    TREND_MAP: dict[str, np.ndarray | None] = {
+        "none": None,
+        "ema20": ema20,
+        "ema50": ema50,
+        "ema100": ema100,
+        "ema200": ema200,
+        "ema300": ema300,
+    }
+
     signals: list[Signal] = []
 
-    for fast_name, fast_ema in [("34", ema34), ("50", ema50)]:
-        for trend_name, trend_ema in [("200", ema200)]:
-            for rsi_lo, rsi_hi, adx_min, atr_mult, use_vol in product(
-                [40, 45],
-                [55, 60],
-                [12, 18],
-                [0.60, 0.90],
-                [False],
+    # ---- EMA_PULLBACK ----
+    ep = _params_for("EMA_PULLBACK", strategy_params)
+    ep_fast_map: dict[str, np.ndarray] = {"34": ema34, "50": ema50}
+    ep_trend_names = _resolve_trend_selection(ep["trend"])
+    for fast_name in ep["fast"]:
+        fast_ema = ep_fast_map.get(fast_name)
+        if fast_ema is None:
+            continue
+        for trend_name in ep_trend_names:
+            trend_ema = TREND_MAP.get(trend_name)
+            for rsi_lo, rsi_hi, adx_min, atr_mult, use_vol_str in product(
+                ep["rsi_lo"], ep["rsi_hi"], ep["adx_min"], ep["atr_mult"], ep["use_vol"]
             ):
+                use_vol = use_vol_str == "true"
                 near_ema = (close - fast_ema).abs() <= atr_mult * atr14
                 lower_wick = np.minimum(open_, close) - low
                 upper_wick = high - np.maximum(open_, close)
                 bull_reject = (close > open_) & (lower_wick >= upper_wick)
                 bear_reject = (close < open_) & (upper_wick >= lower_wick)
-                long_sig = (close > trend_ema) & (ema50 > ema200) & near_ema & bull_reject & (rsi14 <= rsi_lo) & (adx14 >= adx_min)
-                short_sig = (close < trend_ema) & (ema50 < ema200) & near_ema & bear_reject & (rsi14 >= rsi_hi) & (adx14 >= adx_min)
+                base_long = (ema50 > ema200) & near_ema & bull_reject & (rsi14 <= rsi_lo) & (adx14 >= adx_min)
+                base_short = (ema50 < ema200) & near_ema & bear_reject & (rsi14 >= rsi_hi) & (adx14 >= adx_min)
+                if trend_ema is not None:
+                    long_sig = (close > trend_ema) & base_long
+                    short_sig = (close < trend_ema) & base_short
+                else:
+                    long_sig = base_long
+                    short_sig = base_short
                 if use_vol:
                     long_sig &= vol_ok
                     short_sig &= vol_ok
-                params = f"fast={fast_name},trend={trend_name},rsi={rsi_lo}/{rsi_hi},adx_min={adx_min},atr_mult={atr_mult},vol={use_vol}"
+                params = f"fast={fast_name},trend={trend_name},rsi={rsi_lo}/{rsi_hi},adx_min={adx_min},atr_mult={atr_mult},vol={use_vol_str}"
                 signals.append(("EMA_PULLBACK", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
 
-    for window, trend_name, trend_ema, adx_min, use_vol in product(
-        [40, 80],
-        ["200"],
-        [ema200],
-        [18, 24],
-        [False],
-    ):
-        prev_high = high.rolling(window, min_periods=window).max().shift(1)
-        prev_low = low.rolling(window, min_periods=window).min().shift(1)
-        long_sig = (close > prev_high) & (close > trend_ema) & (adx14 >= adx_min)
-        short_sig = (close < prev_low) & (close < trend_ema) & (adx14 >= adx_min)
-        if use_vol:
-            long_sig &= vol_ok
-            short_sig &= vol_ok
-        params = f"donchian={window},trend={trend_name},adx_min={adx_min},vol={use_vol}"
-        signals.append(("DONCHIAN_BREAKOUT", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
+    # ---- DONCHIAN_BREAKOUT ----
+    db = _params_for("DONCHIAN_BREAKOUT", strategy_params)
+    dc_trend_names = _resolve_trend_selection(db["trend"])
+    for window_str in db["window"]:
+        window = int(window_str)
+        for trend_name in dc_trend_names:
+            trend_ema = TREND_MAP.get(trend_name)
+            for adx_min, use_vol_str in product(db["adx_min"], db["use_vol"]):
+                use_vol = use_vol_str == "true"
+                prev_high = high.rolling(window, min_periods=window).max().shift(1)
+                prev_low = low.rolling(window, min_periods=window).min().shift(1)
+                long_sig = (close > prev_high) & (adx14 >= adx_min)
+                short_sig = (close < prev_low) & (adx14 >= adx_min)
+                if trend_ema is not None:
+                    long_sig &= close > trend_ema
+                    short_sig &= close < trend_ema
+                if use_vol:
+                    long_sig &= vol_ok
+                    short_sig &= vol_ok
+                params = f"donchian={window},trend={trend_name},adx_min={adx_min},vol={use_vol_str}"
+                signals.append(("DONCHIAN_BREAKOUT", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
 
-    for window, z, rsi_lo, rsi_hi, trend_mode, adx_max in product(
-        [20, 40],
-        [2.0, 2.4],
-        [25, 30],
-        [70, 75],
-        ["trend", "range"],
-        [None, 24],
-    ):
-        mid = close.rolling(window, min_periods=window).mean()
-        std = close.rolling(window, min_periods=window).std()
-        lower = mid - z * std
-        upper = mid + z * std
-        long_sig = (close < lower) & (rsi14 <= rsi_lo)
-        short_sig = (close > upper) & (rsi14 >= rsi_hi)
-        if trend_mode == "trend":
-            long_sig &= close > ema200
-            short_sig &= close < ema200
-        elif trend_mode == "counter":
-            long_sig &= close < ema200
-            short_sig &= close > ema200
-        elif trend_mode == "range":
-            long_sig &= adx14 <= 18
-            short_sig &= adx14 <= 18
-        if adx_max is not None:
-            long_sig &= adx14 <= adx_max
-            short_sig &= adx14 <= adx_max
-        params = f"bb={window},z={z},rsi={rsi_lo}/{rsi_hi},trend={trend_mode},adx_max={adx_max}"
-        signals.append(("BB_RSI_REVERT", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
+    # ---- BB_RSI_REVERT ----
+    bb = _params_for("BB_RSI_REVERT", strategy_params)
+    for window_str in bb["window"]:
+        window = int(window_str)
+        for z_str in bb["z"]:
+            z = float(z_str)
+            for rsi_lo, rsi_hi in product(bb["rsi_lo"], bb["rsi_hi"]):
+                for trend_mode in bb["trend_mode"]:
+                    for adx_max_str in bb["adx_max"]:
+                        adx_max = int(adx_max_str) if adx_max_str != "none" else None
+                        mid = close.rolling(window, min_periods=window).mean()
+                        std = close.rolling(window, min_periods=window).std()
+                        lower = mid - z * std
+                        upper = mid + z * std
+                        long_sig = (close < lower) & (rsi14 <= rsi_lo)
+                        short_sig = (close > upper) & (rsi14 >= rsi_hi)
+                        if trend_mode == "trend":
+                            long_sig &= close > ema200
+                            short_sig &= close < ema200
+                        elif trend_mode == "counter":
+                            long_sig &= close < ema200
+                            short_sig &= close > ema200
+                        elif trend_mode == "range":
+                            long_sig &= adx14 <= 18
+                            short_sig &= adx14 <= 18
+                        if adx_max is not None:
+                            long_sig &= adx14 <= adx_max
+                            short_sig &= adx14 <= adx_max
+                        params = f"bb={window},z={z},rsi={rsi_lo}/{rsi_hi},trend={trend_mode},adx_max={adx_max_str}"
+                        signals.append(("BB_RSI_REVERT", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
 
+    # ---- IBS_REVERT ----
+    ib = _params_for("IBS_REVERT", strategy_params)
     rng = (high - low).replace(0, np.nan)
     ibs = (close - low) / rng
-    for ibs_lo, ibs_hi, trend_mode, adx_max in product(
-        [0.05, 0.10, 0.20],
-        [0.80, 0.90, 0.95],
-        ["trend", "range"],
-        [None, 24],
-    ):
-        long_sig = ibs <= ibs_lo
-        short_sig = ibs >= ibs_hi
-        if trend_mode == "trend":
-            long_sig &= close > ema200
-            short_sig &= close < ema200
-        elif trend_mode == "counter":
-            long_sig &= close < ema200
-            short_sig &= close > ema200
-        elif trend_mode == "range":
-            long_sig &= adx14 <= 18
-            short_sig &= adx14 <= 18
-        if adx_max is not None:
-            long_sig &= adx14 <= adx_max
-            short_sig &= adx14 <= adx_max
-        params = f"ibs={ibs_lo}/{ibs_hi},trend={trend_mode},adx_max={adx_max}"
-        signals.append(("IBS_REVERT", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
+    for ibs_lo_str in ib["ibs_lo"]:
+        ibs_lo = float(ibs_lo_str)
+        for ibs_hi_str in ib["ibs_hi"]:
+            ibs_hi = float(ibs_hi_str)
+            for trend_mode in ib["trend_mode"]:
+                for adx_max_str in ib["adx_max"]:
+                    adx_max = int(adx_max_str) if adx_max_str != "none" else None
+                    long_sig = ibs <= ibs_lo
+                    short_sig = ibs >= ibs_hi
+                    if trend_mode == "trend":
+                        long_sig &= close > ema200
+                        short_sig &= close < ema200
+                    elif trend_mode == "counter":
+                        long_sig &= close < ema200
+                        short_sig &= close > ema200
+                    elif trend_mode == "range":
+                        long_sig &= adx14 <= 18
+                        short_sig &= adx14 <= 18
+                    if adx_max is not None:
+                        long_sig &= adx14 <= adx_max
+                        short_sig &= adx14 <= adx_max
+                    params = f"ibs={ibs_lo}/{ibs_hi},trend={trend_mode},adx_max={adx_max_str}"
+                    signals.append(("IBS_REVERT", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
 
+    # ---- VOL_EXPANSION_CONT ----
+    vp = _params_for("VOL_EXPANSION_CONT", strategy_params)
+    vol_trend_names = _resolve_trend_selection(vp["trend"])
+    vol_trend_map: list[tuple[str, object]] = []
+    for tn in vol_trend_names:
+        ema_arr = TREND_MAP.get(tn)
+        vol_trend_map.append((tn, ema_arr))
     range_pct = (high - low) / close
     range_ma = range_pct.rolling(50, min_periods=50).median()
     body = (close - open_).abs()
     body_ratio = body / (high - low).replace(0, np.nan)
-    _vol_p = (strategy_params or {}).get("VOL_EXPANSION_CONT", VOL_EXPANSION_CONT_DEFAULTS)
-    _vol_schema = STRATEGY_PARAM_SCHEMAS.get("VOL_EXPANSION_CONT", {})
-    vol_range_mult = _expand_range(_vol_p.get("range_mult", VOL_EXPANSION_CONT_DEFAULTS["range_mult"]), _vol_schema.get("range_mult", {}).get("step"))
-    vol_trend_names = _vol_p.get("trend", VOL_EXPANSION_CONT_DEFAULTS["trend"])
-    vol_adx_min = _expand_range(_vol_p.get("adx_min", VOL_EXPANSION_CONT_DEFAULTS["adx_min"]), _vol_schema.get("adx_min", {}).get("step"))
-    vol_close_extreme = _expand_range(_vol_p.get("close_extreme", VOL_EXPANSION_CONT_DEFAULTS["close_extreme"]), _vol_schema.get("close_extreme", {}).get("step"))
-    vol_body_min = _expand_range(_vol_p.get("body_min", VOL_EXPANSION_CONT_DEFAULTS["body_min"]), _vol_schema.get("body_min", {}).get("step"))
-    vol_trend_map: list[tuple[str, object]] = []
-    for tn in vol_trend_names:
-        if tn == "none":
-            vol_trend_map.append(("none", None))
-        elif tn == "ema100":
-            vol_trend_map.append(("ema100", ema100))
-        elif tn == "ema200":
-            vol_trend_map.append(("ema200", ema200))
-        elif tn == "200":
-            vol_trend_map.append(("200", ema200))
     for mult, (trend_name, trend_ema), adx_min, close_extreme, body_min in product(
-        vol_range_mult,
+        vp["range_mult"],
         vol_trend_map,
-        vol_adx_min,
-        vol_close_extreme,
-        vol_body_min,
+        vp["adx_min"],
+        vp["close_extreme"],
+        vp["body_min"],
     ):
         strong_range = range_pct >= mult * range_ma
         long_sig = strong_range & (adx14 >= adx_min) & (body_ratio >= body_min) & (ibs >= close_extreme)
@@ -196,90 +250,107 @@ def build_signals(df: pd.DataFrame, timeframe: str, strategy_params: dict | None
         params = f"range_mult={mult},trend={trend_name},adx_min={adx_min},close_extreme={close_extreme},body_min={body_min}"
         signals.append(("VOL_EXPANSION_CONT", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
 
-    for period, mult, trend_name, trend_ema in product(
-        [10, 14, 20],
-        [2.0, 3.0, 4.0],
-        ["none", "200"],
-        [None, ema200],
-    ):
-        trend = pd.Series(supertrend(df, period, mult), index=df.index)
-        long_sig = (trend == 1) & (trend.shift(1) == -1)
-        short_sig = (trend == -1) & (trend.shift(1) == 1)
-        if trend_ema is not None:
-            long_sig &= close > trend_ema
-            short_sig &= close < trend_ema
-        params = f"period={period},mult={mult},trend={trend_name}"
-        signals.append(("SUPERTREND", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
+    # ---- SUPERTREND ----
+    sp = _params_for("SUPERTREND", strategy_params)
+    sp_trend_names = _resolve_trend_selection(sp["trend"])
+    for period_str in sp["period"]:
+        period = int(period_str)
+        for mult_str in sp["mult"]:
+            mult = float(mult_str)
+            for trend_name in sp_trend_names:
+                trend_ema = TREND_MAP.get(trend_name)
+                trend = pd.Series(supertrend(df, period, mult), index=df.index)
+                long_sig = (trend == 1) & (trend.shift(1) == -1)
+                short_sig = (trend == -1) & (trend.shift(1) == 1)
+                if trend_ema is not None:
+                    long_sig &= close > trend_ema
+                    short_sig &= close < trend_ema
+                params = f"period={period},mult={mult},trend={trend_name}"
+                signals.append(("SUPERTREND", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
 
-    for (fast, slow, sig_len), trend_name, trend_ema, adx_min in product(
-        [(8, 21, 5), (12, 26, 9), (5, 34, 5)],
-        ["none", "200"],
-        [None, ema200],
-        [12, 18],
-    ):
-        _, _, hist = macd(close, fast, slow, sig_len)
-        long_sig = (hist > 0) & (hist.shift(1) <= 0) & (adx14 >= adx_min)
-        short_sig = (hist < 0) & (hist.shift(1) >= 0) & (adx14 >= adx_min)
-        if trend_ema is not None:
-            long_sig &= close > trend_ema
-            short_sig &= close < trend_ema
-        params = f"macd={fast}/{slow}/{sig_len},trend={trend_name},adx_min={adx_min}"
-        signals.append(("MACD_CROSS", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
+    # ---- MACD_CROSS ----
+    mc = _params_for("MACD_CROSS", strategy_params)
+    mc_trend_names = _resolve_trend_selection(mc["trend"])
+    for preset_str in mc["preset"]:
+        parts = [int(x) for x in preset_str.split("/")]
+        fast, slow, sig_len = parts[0], parts[1], parts[2]
+        for trend_name in mc_trend_names:
+            trend_ema = TREND_MAP.get(trend_name)
+            for adx_min in mc["adx_min"]:
+                _, _, hist = macd(close, fast, slow, sig_len)
+                long_sig = (hist > 0) & (hist.shift(1) <= 0) & (adx14 >= adx_min)
+                short_sig = (hist < 0) & (hist.shift(1) >= 0) & (adx14 >= adx_min)
+                if trend_ema is not None:
+                    long_sig &= close > trend_ema
+                    short_sig &= close < trend_ema
+                params = f"macd={fast}/{slow}/{sig_len},trend={trend_name},adx_min={adx_min}"
+                signals.append(("MACD_CROSS", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
 
-    for (n1, n2), (ob, os), trend_mode in product(
-        [(10, 21), (10, 11), (14, 21)],
-        [(53, -53), (60, -60)],
-        ["trend", "range"],
-    ):
-        wt1, wt2 = wavetrend(df, n1, n2)
-        long_sig = (wt1 < os) & (wt1 > wt2) & (wt1.shift(1) <= wt2.shift(1))
-        short_sig = (wt1 > ob) & (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
-        if trend_mode == "trend":
-            long_sig &= close > ema200
-            short_sig &= close < ema200
-        elif trend_mode == "range":
-            long_sig &= adx14 <= 18
-            short_sig &= adx14 <= 18
-        params = f"wt={n1}/{n2},ob_os={ob}/{os},trend={trend_mode}"
-        signals.append(("WAVETREND", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
+    # ---- WAVETREND ----
+    wt = _params_for("WAVETREND", strategy_params)
+    for preset_str in wt["preset"]:
+        ns = [int(x) for x in preset_str.split("/")]
+        n1, n2 = ns[0], ns[1]
+        for ob_os_str in wt["ob_os"]:
+            obs = [int(x) for x in ob_os_str.split("/")]
+            ob, os = obs[0], obs[1]
+            for trend_mode in wt["trend_mode"]:
+                wt1, wt2 = wavetrend(df, n1, n2)
+                long_sig = (wt1 < os) & (wt1 > wt2) & (wt1.shift(1) <= wt2.shift(1))
+                short_sig = (wt1 > ob) & (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
+                if trend_mode == "trend":
+                    long_sig &= close > ema200
+                    short_sig &= close < ema200
+                elif trend_mode == "range":
+                    long_sig &= adx14 <= 18
+                    short_sig &= adx14 <= 18
+                params = f"wt={n1}/{n2},ob_os={ob}/{os},trend={trend_mode}"
+                signals.append(("WAVETREND", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
 
-    for length, bb_m, kc_m, trend_name, trend_ema in product(
-        [20, 30],
-        [2.0],
-        [1.5, 2.0],
-        ["none", "200"],
-        [None, ema200],
-    ):
-        sqz_on, sqz_off, val = squeeze_momentum(df, length, bb_m, kc_m)
-        squeeze_release = sqz_off & sqz_on.shift(1)
-        long_sig = squeeze_release & (val > 0) & (val > val.shift(1))
-        short_sig = squeeze_release & (val < 0) & (val < val.shift(1))
-        if trend_ema is not None:
-            long_sig &= close > trend_ema
-            short_sig &= close < trend_ema
-        params = f"sqz={length},bb={bb_m},kc={kc_m},trend={trend_name}"
-        signals.append(("SQUEEZE_MOM", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
+    # ---- SQUEEZE_MOM ----
+    sq = _params_for("SQUEEZE_MOM", strategy_params)
+    sq_trend_names = _resolve_trend_selection(sq["trend"])
+    for length_str in sq["length"]:
+        length = int(length_str)
+        for bb_m_str in sq["bb_mult"]:
+            bb_m = float(bb_m_str)
+            for kc_m_str in sq["kc_mult"]:
+                kc_m = float(kc_m_str)
+                for trend_name in sq_trend_names:
+                    trend_ema = TREND_MAP.get(trend_name)
+                    sqz_on, sqz_off, val = squeeze_momentum(df, length, bb_m, kc_m)
+                    squeeze_release = sqz_off & sqz_on.shift(1)
+                    long_sig = squeeze_release & (val > 0) & (val > val.shift(1))
+                    short_sig = squeeze_release & (val < 0) & (val < val.shift(1))
+                    if trend_ema is not None:
+                        long_sig &= close > trend_ema
+                        short_sig &= close < trend_ema
+                    params = f"sqz={length},bb={bb_m},kc={kc_m},trend={trend_name}"
+                    signals.append(("SQUEEZE_MOM", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only", "both")))
 
-    for pd_len, bbl, ph, trend_mode in product(
-        [22, 30],
-        [20],
-        [0.85, 0.90],
-        ["trend", "range"],
-    ):
-        _, alert = williams_vix_fix(df, pd_len, bbl, 2.0, 50, ph)
-        long_sig = alert
-        if trend_mode == "trend":
-            long_sig &= close > ema200
-        elif trend_mode == "range":
-            long_sig &= adx14 <= 18
-        short_sig = pd.Series(False, index=df.index)
-        params = f"wvf={pd_len}/{bbl},ph={ph},trend={trend_mode}"
-        signals.append(("WILLIAMS_VIX_FIX", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only",)))
+    # ---- WILLIAMS_VIX_FIX ----
+    wv = _params_for("WILLIAMS_VIX_FIX", strategy_params)
+    for pd_len_str in wv["pd_len"]:
+        pd_len = int(pd_len_str)
+        for bbl_str in wv["bbl"]:
+            bbl = int(bbl_str)
+            for ph_str in wv["ph"]:
+                ph = float(ph_str)
+                for trend_mode in wv["trend_mode"]:
+                    _, alert = williams_vix_fix(df, pd_len, bbl, 2.0, 50, ph)
+                    long_sig = alert
+                    if trend_mode == "trend":
+                        long_sig &= close > ema200
+                    elif trend_mode == "range":
+                        long_sig &= adx14 <= 18
+                    short_sig = pd.Series(False, index=df.index)
+                    params = f"wvf={pd_len}/{bbl},ph={ph},trend={trend_mode}"
+                    signals.append(("WILLIAMS_VIX_FIX", params, shift_signal(long_sig), shift_signal(short_sig), ("long_only",)))
 
     return signals
 
 
-def _build_vol_expansion_dense_signals(df: pd.DataFrame) -> list[DenseSignal]:
+def _build_vol_expansion_dense_signals(df: pd.DataFrame, strategy_params: dict | None = None) -> list[DenseSignal]:
     close = df["close"]
     open_ = df["open"]
     high = df["high"]
@@ -288,27 +359,41 @@ def _build_vol_expansion_dense_signals(df: pd.DataFrame) -> list[DenseSignal]:
     adx14 = adx(df, 14)
     ema100 = ema(close, 100)
     ema200 = ema(close, 200)
+    ema20 = ema(close, 20)
+    ema50 = ema(close, 50)
+    ema300 = ema(close, 300)
+
+    TREND_MAP: dict[str, np.ndarray | None] = {
+        "none": None,
+        "ema20": ema20,
+        "ema50": ema50,
+        "ema100": ema100,
+        "ema200": ema200,
+        "ema300": ema300,
+    }
+
+    vp = _params_for("VOL_EXPANSION_CONT", strategy_params)
+    vol_trend_names = _resolve_trend_selection(vp["trend"])
+    vol_trend_map: list[tuple[str, object]] = []
+    for tn in vol_trend_names:
+        ema_arr = TREND_MAP.get(tn)
+        vol_trend_map.append((tn, ema_arr))
+
     rng = (high - low).replace(0, np.nan)
     ibs = (close - low) / rng
     range_pct = (high - low) / close
     range_ma = range_pct.rolling(50, min_periods=50).median()
     body_ratio = (close - open_).abs() / rng
 
-    trend_filters = [
-        ("none", None),
-        ("ema100", ema100),
-        ("ema200", ema200),
-    ]
-
     signals: list[DenseSignal] = []
-    for range_mult, (trend_name, trend_ema), adx_min, close_extreme, body_min in product(
-        [0.8, 1.0, 1.2, 1.5, 2.0],
-        trend_filters,
-        [8, 12, 18, 24],
-        [0.60, 0.65, 0.70, 0.75, 0.85],
-        [0.45, 0.55],
+    for mult, (trend_name, trend_ema), adx_min, close_extreme, body_min in product(
+        vp["range_mult"],
+        vol_trend_map,
+        vp["adx_min"],
+        vp["close_extreme"],
+        vp["body_min"],
     ):
-        strong_range = range_pct >= range_mult * range_ma
+        strong_range = range_pct >= mult * range_ma
         long_sig = strong_range & (body_ratio >= body_min) & (ibs >= close_extreme) & (adx14 >= adx_min)
         short_sig = strong_range & (body_ratio >= body_min) & (ibs <= 1.0 - close_extreme) & (adx14 >= adx_min)
         if trend_ema is not None:
@@ -316,7 +401,7 @@ def _build_vol_expansion_dense_signals(df: pd.DataFrame) -> list[DenseSignal]:
             short_sig &= close < trend_ema
 
         params = (
-            f"range_mult={range_mult},trend={trend_name},adx_min={adx_min},"
+            f"range_mult={mult},trend={trend_name},adx_min={adx_min},"
             f"close_extreme={close_extreme},body_min={body_min}"
         )
         signals.append((params, shift_signal(long_sig), shift_signal(short_sig), ("both", "long_only")))
@@ -350,7 +435,7 @@ def _build_dense_variants(
         builder = mode_builders.get("dense_high_winrate")
         if builder is None:
             continue
-        results.extend(builder(df, timeframe))
+        results.extend(builder(df, timeframe, strategy_params=strategy_params))
     return results
 
 
@@ -379,10 +464,10 @@ def build_signal_variants(
     return builder(df, timeframe, strategies, strategy_params=strategy_params)
 
 
-def _build_dense_vol_variants(df: pd.DataFrame, timeframe: str) -> list[SignalVariant]:
+def _build_dense_vol_variants(df: pd.DataFrame, timeframe: str, strategy_params: dict | None = None) -> list[SignalVariant]:
     return [
         SignalVariant("VOL_EXPANSION_CONT", params, le, se, sm)
-        for params, le, se, sm in _build_vol_expansion_dense_signals(df)
+        for params, le, se, sm in _build_vol_expansion_dense_signals(df, strategy_params)
     ]
 
 
