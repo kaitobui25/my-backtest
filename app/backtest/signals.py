@@ -295,6 +295,40 @@ def build_vol_expansion_signals(df: pd.DataFrame) -> list[DenseSignal]:
     return signals
 
 
+def _build_normal_variants(
+    df: pd.DataFrame,
+    timeframe: str,
+    strategies: set[str] | None,
+) -> list[SignalVariant]:
+    return [
+        SignalVariant(strategy, params, le, se, sm)
+        for strategy, params, le, se, sm in build_signals(df, timeframe)
+        if strategies is None or strategy in strategies
+    ]
+
+
+def _build_dense_variants(
+    df: pd.DataFrame,
+    timeframe: str,
+    strategies: set[str] | None,
+) -> list[SignalVariant]:
+    results: list[SignalVariant] = []
+    for strategy_name, mode_builders in STRATEGY_BUILDERS.items():
+        if strategies is not None and strategy_name not in strategies:
+            continue
+        builder = mode_builders.get("dense_high_winrate")
+        if builder is None:
+            continue
+        results.extend(builder(df, timeframe))
+    return results
+
+
+_MODE_BUILDERS: dict[str, Callable] = {
+    "normal": _build_normal_variants,
+    "dense_high_winrate": _build_dense_variants,
+}
+
+
 def build_signal_variants(
     df: pd.DataFrame,
     timeframe: str,
@@ -304,30 +338,10 @@ def build_signal_variants(
     if strategies is not None:
         strategies = set(strategies)
 
-    if mode == "normal":
-        return [
-            SignalVariant(strategy, params, le, se, sm)
-            for strategy, params, le, se, sm in build_signals(df, timeframe)
-            if strategies is None or strategy in strategies
-        ]
-
-    if mode == "dense_high_winrate":
-        if strategies is not None and "VOL_EXPANSION_CONT" not in strategies:
-            return []
-        return [
-            SignalVariant("VOL_EXPANSION_CONT", params, le, se, sm)
-            for params, le, se, sm in build_vol_expansion_signals(df)
-        ]
-
-    return []
-
-
-def _build_normal_vol_variants(df: pd.DataFrame, timeframe: str) -> list[SignalVariant]:
-    return [
-        SignalVariant("VOL_EXPANSION_CONT", params, le, se, sm)
-        for strategy, params, le, se, sm in build_signals(df, timeframe)
-        if strategy == "VOL_EXPANSION_CONT"
-    ]
+    builder = _MODE_BUILDERS.get(mode)
+    if builder is None:
+        return []
+    return builder(df, timeframe, strategies)
 
 
 def _build_dense_vol_variants(df: pd.DataFrame, timeframe: str) -> list[SignalVariant]:
@@ -339,7 +353,6 @@ def _build_dense_vol_variants(df: pd.DataFrame, timeframe: str) -> list[SignalVa
 
 STRATEGY_BUILDERS: dict[str, dict[str, Callable]] = {
     "VOL_EXPANSION_CONT": {
-        "normal": _build_normal_vol_variants,
         "dense_high_winrate": _build_dense_vol_variants,
     },
 }
