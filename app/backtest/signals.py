@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from itertools import product
 
 import numpy as np
@@ -10,6 +12,15 @@ from app.backtest.indicators import adx, atr, ema, macd, rsi, squeeze_momentum, 
 
 Signal = tuple[str, str, np.ndarray, np.ndarray, tuple[str, ...]]
 DenseSignal = tuple[str, np.ndarray, np.ndarray, tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class SignalVariant:
+    strategy: str
+    params: str
+    long_entries: np.ndarray
+    short_entries: np.ndarray
+    side_modes: tuple[str, ...]
 
 
 def shift_signal(signal: pd.Series) -> np.ndarray:
@@ -282,3 +293,53 @@ def build_vol_expansion_signals(df: pd.DataFrame) -> list[DenseSignal]:
         signals.append((params, shift_signal(long_sig), shift_signal(short_sig), ("both", "long_only")))
 
     return signals
+
+
+def build_signal_variants(
+    df: pd.DataFrame,
+    timeframe: str,
+    mode: str,
+    strategies: list[str] | set[str] | None = None,
+) -> list[SignalVariant]:
+    if strategies is not None:
+        strategies = set(strategies)
+
+    if mode == "normal":
+        return [
+            SignalVariant(strategy, params, le, se, sm)
+            for strategy, params, le, se, sm in build_signals(df, timeframe)
+            if strategies is None or strategy in strategies
+        ]
+
+    if mode == "dense_high_winrate":
+        if strategies is not None and "VOL_EXPANSION_CONT" not in strategies:
+            return []
+        return [
+            SignalVariant("VOL_EXPANSION_CONT", params, le, se, sm)
+            for params, le, se, sm in build_vol_expansion_signals(df)
+        ]
+
+    return []
+
+
+def _build_normal_vol_variants(df: pd.DataFrame, timeframe: str) -> list[SignalVariant]:
+    return [
+        SignalVariant("VOL_EXPANSION_CONT", params, le, se, sm)
+        for strategy, params, le, se, sm in build_signals(df, timeframe)
+        if strategy == "VOL_EXPANSION_CONT"
+    ]
+
+
+def _build_dense_vol_variants(df: pd.DataFrame, timeframe: str) -> list[SignalVariant]:
+    return [
+        SignalVariant("VOL_EXPANSION_CONT", params, le, se, sm)
+        for params, le, se, sm in build_vol_expansion_signals(df)
+    ]
+
+
+STRATEGY_BUILDERS: dict[str, dict[str, Callable]] = {
+    "VOL_EXPANSION_CONT": {
+        "normal": _build_normal_vol_variants,
+        "dense_high_winrate": _build_dense_vol_variants,
+    },
+}
