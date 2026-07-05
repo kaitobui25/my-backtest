@@ -691,3 +691,14 @@ body {
 .filter-star.fav {
   color: #e6a817;
 }
+
+.apply-status {
+  font-size: 10px;
+  font-weight: 400;
+  color: #6b8;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.apply-status.changed {
+  color: #c9302c;
+}

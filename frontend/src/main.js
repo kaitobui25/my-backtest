@@ -27,6 +27,7 @@ function renderAll() {
   renderSearchGrid();
   renderExecutionSettings();
   renderRiskSettings();
+  updateApplyStatusBadges();
   updateRunButton();
 }
 
@@ -267,6 +268,28 @@ function isConfigKeyChanged(key) {
 
 function saveConfigSnapshot() {
   state.lastRunConfigSnapshot = snapshotCurrentConfig();
+}
+
+function appliedStatusFor(keys) {
+  if (!state.lastRunConfigSnapshot) return "";
+  const changed = keys.some(key => isConfigKeyChanged(key));
+  return changed
+    ? "Changed after run — click Run Backtest to apply"
+    : "Applied to current results";
+}
+
+function updateApplyStatusBadges() {
+  const setBadge = (id, keys) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const text = appliedStatusFor(keys);
+    el.textContent = text;
+    el.classList.toggle("changed", text.startsWith("Changed"));
+  };
+  setBadge("filters-apply-status", ["filters"]);
+  setBadge("grid-apply-status", ["gridProfile", "gridSl", "gridTp", "gridMh", "gridMtpd", "gridMttpd"]);
+  setBadge("execution-apply-status", ["entryMode", "useSpread", "spreadPct", "slippagePct"]);
+  setBadge("risk-apply-status", ["usePositionSizing", "riskPerTradePct", "useLeverage", "leverage", "useLiquidation", "maintenanceMarginPct"]);
 }
 
 function renderSearchGrid() {
@@ -591,6 +614,7 @@ function handleFilterChange(e) {
   if (panel) {
     panel.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("filters"));
   }
+  updateApplyStatusBadges();
 }
 
 function addFilter() {
@@ -668,6 +692,7 @@ async function handleRun() {
     state.dirty = false;
     updateDirtyIndicator();
     saveConfigSnapshot();
+    updateApplyStatusBadges();
 
     const timing = result.timing;
     const durationStr = timing ? " — " + timing.duration_sec.toFixed(2) + "s" : "";
@@ -817,6 +842,7 @@ function bindEvents() {
       state.densitySettings.min_test_trades_per_day = target.value;
       if (row) row.classList.toggle("config-dirty", hasTrackableResult() && isConfigKeyChanged("gridMttpd"));
     }
+    updateApplyStatusBadges();
   });
 
   document.getElementById("execution-settings").addEventListener("change", e => {
@@ -824,6 +850,7 @@ function bindEvents() {
     if (target.id === "exec-entry-next") {
       state.executionSettings.entry_next_open = target.checked;
       dirtyTrack("entryMode");
+      updateApplyStatusBadges();
     }
     if (target.id === "exec-use-spread") {
       state.executionSettings.use_spread_slippage = target.checked;
@@ -837,10 +864,12 @@ function bindEvents() {
     if (target.id === "exec-spread-pct") {
       state.executionSettings.spread_pct = target.value;
       dirtyTrack("spreadPct");
+      updateApplyStatusBadges();
     }
     if (target.id === "exec-slippage-pct") {
       state.executionSettings.slippage_pct = target.value;
       dirtyTrack("slippagePct");
+      updateApplyStatusBadges();
     }
   });
 
@@ -877,14 +906,17 @@ function bindEvents() {
     if (target.id === "risk-per-trade") {
       state.riskSettings.risk_per_trade_pct = Number(target.value);
       dirtyTrack("riskPerTradePct");
+      updateApplyStatusBadges();
     }
     if (target.id === "risk-leverage") {
       state.riskSettings.leverage = Number(target.value);
       dirtyTrack("leverage");
+      updateApplyStatusBadges();
     }
     if (target.id === "risk-mm") {
       state.riskSettings.maintenance_margin_pct = Number(target.value);
       dirtyTrack("maintenanceMarginPct");
+      updateApplyStatusBadges();
     }
   });
 
@@ -1019,6 +1051,7 @@ async function handleLoadSavedRun(runId) {
     renderColumnChooser();
     renderTableContent();
     saveConfigSnapshot();
+    updateApplyStatusBadges();
 
     const tfs = (meta.timeframes || []).join(",");
     const rowsInfo = data.rows ? " — " + data.rows.length + " rows" : "";
