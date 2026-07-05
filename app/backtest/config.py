@@ -71,6 +71,7 @@ REQUIRED_COLUMNS = [
     "equity_max_drawdown",
     "final_equity",
     "liquidated_trades",
+    "liquidation_rate",
     "score",
 ]
 

@@ -150,10 +150,13 @@ def evaluate_normal_timeframe(
                     ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
                     ttpd_arr, tmgd_arr, tabh_arr,
                     amb_arr,
-                    eq_tr_arr, eq_mdd_arr, fin_eq_arr, liq_arr,
                     timeframe, signal.strategy, signal.params, side_mode,
                     min_full_trades, min_test_trades, min_test_win_rate,
                     min_profit_factor, min_test_profit_factor,
+                    equity_total_return_arr=eq_tr_arr,
+                    equity_max_drawdown_arr=eq_mdd_arr,
+                    final_equity_arr=fin_eq_arr,
+                    liquidated_trades_arr=liq_arr,
                 )
             )
 
@@ -233,9 +236,12 @@ def evaluate_dense_timeframe(
                     ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
                     ttpd_arr, tmgd_arr, tabh_arr,
                     amb_arr,
-                    eq_tr_arr, eq_mdd_arr, fin_eq_arr, liq_arr,
                     timeframe, signal.strategy, signal.params, side_mode,
                     min_trades, min_win_rate, min_test_trades, min_test_win_rate,
+                    equity_total_return_arr=eq_tr_arr,
+                    equity_max_drawdown_arr=eq_mdd_arr,
+                    final_equity_arr=fin_eq_arr,
+                    liquidated_trades_arr=liq_arr,
                 )
             )
 

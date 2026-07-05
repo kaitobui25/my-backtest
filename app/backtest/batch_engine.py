@@ -316,8 +316,8 @@ def simulate_many_configs_with_entries_summary(
     risk_dec = risk_per_trade_pct / 100.0
     use_equity = use_position_sizing or use_leverage or use_liquidation
     lev = max(leverage, 1.0)
-    mm = maintenance_margin_pct
-    liq_factor = (1.0 - mm) / lev if lev > 0 else 0.0
+    mm_dec = maintenance_margin_pct / 100.0
+    liq_factor = (1.0 / lev - mm_dec) if lev > 1.0 else 0.0
 
     trades_arr = np.zeros(num_configs, dtype=np.int64)
     win_rate_arr = np.full(num_configs, np.nan, dtype=np.float64)
@@ -393,7 +393,7 @@ def simulate_many_configs_with_entries_summary(
                         ambiguous_trades += 1
                     liq_price = 0.0
                     hit_liq = False
-                    if use_liquidation:
+                    if use_liquidation and lev > 1.0:
                         liq_price = entry * (1.0 - liq_factor)
                         hit_liq = low[i] <= liq_price
                     if hit_liq:
@@ -432,7 +432,7 @@ def simulate_many_configs_with_entries_summary(
                         ambiguous_trades += 1
                     liq_price = 0.0
                     hit_liq = False
-                    if use_liquidation:
+                    if use_liquidation and lev > 1.0:
                         liq_price = entry * (1.0 + liq_factor)
                         hit_liq = high[i] >= liq_price
                     if hit_liq:
@@ -480,7 +480,7 @@ def simulate_many_configs_with_entries_summary(
                             ambiguous_trades += 1
                         liq_price = 0.0
                         hit_liq = False
-                        if use_liquidation:
+                        if use_liquidation and lev > 1.0:
                             liq_price = entry * (1.0 - liq_factor)
                             hit_liq = low[i] <= liq_price
                         if hit_liq:
@@ -524,7 +524,7 @@ def simulate_many_configs_with_entries_summary(
                             ambiguous_trades += 1
                         liq_price = 0.0
                         hit_liq = False
-                        if use_liquidation:
+                        if use_liquidation and lev > 1.0:
                             liq_price = entry * (1.0 + liq_factor)
                             hit_liq = high[i] >= liq_price
                         if hit_liq:

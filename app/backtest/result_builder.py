@@ -25,6 +25,12 @@ def _compute_ambiguous_rate(ambiguous_trades: int, trades: int) -> float:
     return ambiguous_trades / trades * 100.0
 
 
+def _compute_liquidation_rate(liquidated_trades: int, trades: int) -> float:
+    if trades == 0:
+        return float("nan")
+    return liquidated_trades / trades * 100.0
+
+
 def batch_to_normal_rows(
     sl_arr: np.ndarray,
     tp_arr: np.ndarray,
@@ -138,6 +144,7 @@ def batch_to_normal_rows(
                 "equity_max_drawdown": eq_mdd,
                 "final_equity": fin_eq,
                 "liquidated_trades": liq_tr,
+                "liquidation_rate": _compute_liquidation_rate(liq_tr, trades),
                 "score": score,
             }
         )
@@ -273,6 +280,7 @@ def batch_to_dense_rows(
                 "equity_max_drawdown": eq_mdd,
                 "final_equity": fin_eq,
                 "liquidated_trades": liq_tr,
+                "liquidation_rate": _compute_liquidation_rate(liq_tr, trades),
                 "score": score,
             }
         )

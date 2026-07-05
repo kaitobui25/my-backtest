@@ -730,3 +730,140 @@ def test_phase2_all_features_enabled():
     assert not np.isnan(result.get("equity_total_return", np.nan))
     assert not np.isnan(result.get("equity_max_drawdown", np.nan))
     assert isinstance(result.get("liquidated_trades", 0), int)
+
+
+def test_liquidation_rate_in_result():
+    from app.backtest.result_builder import _compute_liquidation_rate
+    assert _compute_liquidation_rate(3, 10) == 30.0
+    assert _compute_liquidation_rate(0, 10) == 0.0
+    assert np.isnan(_compute_liquidation_rate(0, 0))
+
+    n = 50
+    close = np.arange(100.0, 150.0, 1.0, dtype=np.float64)
+    open_ = close - 0.5
+    high = close + 1.0
+    low = close - 50.0
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[0] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    index_ns = _synthetic_index(n)
+    fee = 0.0
+    test_start_idx = 40
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    configs = build_config_grid([0.5], [0.01], [0])
+    result = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days, use_liquidation=True, maintenance_margin_pct=0.5, use_leverage=True, leverage=2.0)
+    assert result["liquidated_trades"] > 0
+    liq = result["liquidated_trades"]
+    trades = result["trades"]
+    expected_rate = liq / trades * 100.0 if trades > 0 else float("nan")
+    from app.backtest.result_builder import _compute_liquidation_rate
+    rate = _compute_liquidation_rate(liq, trades)
+    if not np.isnan(expected_rate):
+        assert abs(rate - expected_rate) < 1e-9
+
+
+def test_runner_result_rows_have_correct_string_fields():
+    from app.backtest.result_builder import batch_to_dense_rows, batch_to_normal_rows
+
+    n = 3
+    arr = np.full(n, 0.5, dtype=np.float64)
+    arr2 = np.full(n, 10, dtype=np.int64)
+    amb = np.zeros(n, dtype=np.int64)
+    eq_tr = np.full(n, 5.0, dtype=np.float64)
+    eq_mdd = np.full(n, -2.0, dtype=np.float64)
+    fin_eq = np.full(n, 1.2, dtype=np.float64)
+    liq = np.zeros(n, dtype=np.int64)
+
+    rows = batch_to_dense_rows(
+        arr * 0.01, arr * 0.02, arr2,
+        arr2, arr * 50, arr * 10, arr * 3.0, arr * 2.0, arr * -5.0, arr, arr,
+        arr, arr, arr,
+        arr2, arr * 50, arr * 10, arr * 3.0, arr * 2.0,
+        arr, arr, arr,
+        amb,
+        "H1", "TEST_STRAT", "0.01_0.02_48", "both",
+        1, 10.0, 1, 10.0,
+        equity_total_return_arr=eq_tr,
+        equity_max_drawdown_arr=eq_mdd,
+        final_equity_arr=fin_eq,
+        liquidated_trades_arr=liq,
+    )
+    assert len(rows) > 0, "dense rows should not be empty"
+    assert rows[0]["timeframe"] == "H1"
+    assert rows[0]["strategy"] == "TEST_STRAT"
+    assert rows[0]["params"] == "0.01_0.02_48"
+    assert rows[0]["side_mode"] == "both"
+
+    rows = batch_to_normal_rows(
+        arr * 0.01, arr * 0.02, arr2,
+        arr2, arr * 50, arr * 10, arr * 3.0, arr * 2.0, arr * -5.0, arr, arr,
+        arr, arr, arr,
+        arr2, arr * 50, arr * 10, arr * 3.0, arr * 2.0,
+        arr, arr, arr,
+        amb,
+        "H1", "TEST_STRAT", "0.01_0.02_48", "both",
+        1, 1, 10.0, 1.05, 1.0,
+        equity_total_return_arr=eq_tr,
+        equity_max_drawdown_arr=eq_mdd,
+        final_equity_arr=fin_eq,
+        liquidated_trades_arr=liq,
+    )
+    assert len(rows) > 0, "normal rows should not be empty"
+    assert rows[0]["timeframe"] == "H1"
+    assert rows[0]["strategy"] == "TEST_STRAT"
+
+
+def test_maintenance_margin_pct_0_5_is_0_5_pct():
+    """0.5% maintenance margin with 2x leverage means ~49.5% drop to liquidate."""
+    n = 50
+    close = 100.0 + np.arange(n, dtype=np.float64) * 0.0
+    open_ = close.copy()
+    high = close + 1.0
+    low = close - 50.0
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[0] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    index_ns = _synthetic_index(n)
+    fee = 0.0
+    test_start_idx = 40
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    configs = build_config_grid([0.5], [0.001], [0])
+    result = _batched_dense_result(
+        open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days,
+        use_liquidation=True, maintenance_margin_pct=0.5, use_leverage=True, leverage=2.0,
+    )
+    assert result["trades"] > 0
+    assert result["liquidated_trades"] > 0
+    entry = open_[0]
+    expected_liq = entry * (1.0 - 1.0 / 2.0 + 0.5 / 100.0)
+    assert expected_liq == pytest.approx(50.5, abs=0.01)
+
+
+def test_liquidation_priority_over_sl_tp():
+    """When liq, SL, and TP all trigger in same candle, liq exit is used."""
+    n = 20
+    open_ = np.full(n, 100.0, dtype=np.float64)
+    high = np.full(n, 120.0, dtype=np.float64)
+    low = np.full(n, 40.0, dtype=np.float64)
+    close = np.full(n, 100.0, dtype=np.float64)
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[0] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    index_ns = _synthetic_index(n)
+    fee = 0.0
+    test_start_idx = 5
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    configs = build_config_grid([0.1], [0.1], [0])
+    result = _batched_dense_result(
+        open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days,
+        use_liquidation=True, maintenance_margin_pct=0.5, use_leverage=True, leverage=2.0,
+    )
+    assert result["trades"] >= 1
+    assert result["liquidated_trades"] >= 1
+    entry = 100.0
+    liq_price = entry * (1.0 - 1.0 / 2.0 + 0.5 / 100.0)
+    expected_liq_return = (liq_price / entry - 1.0) * 100
+    assert abs(result["total_return"] - expected_liq_return) < 1e-9
