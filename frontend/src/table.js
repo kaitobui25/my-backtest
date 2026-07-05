@@ -112,7 +112,10 @@ function renderTableBody() {
 
     const cells = visibleCols.map(col => {
       const v = row[col];
-      return `<td>${v == null ? "" : v}</td>`;
+      const display = (v != null && typeof v === "number" && !Number.isInteger(v) && col !== "sl" && col !== "tp")
+        ? v.toFixed(1)
+        : v;
+      return `<td>${display == null ? "" : display}</td>`;
     }).join("");
 
     return `<tr data-idx="${origIdx}">
@@ -139,8 +142,9 @@ function handleTableClick(e) {
     const rect = e.target.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const starW = rect.width / 5;
-    const stars = Math.min(5, Math.max(1, Math.floor(x / starW) + 1));
-    setRating(idx, stars);
+    const stars = Math.min(5, Math.max(0, Math.floor(x / starW) + 1));
+    const current = state.ratings[idx] || 0;
+    setRating(idx, stars === current ? 0 : stars);
   }
 }
 
