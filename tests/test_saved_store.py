@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services.saved_store import DATA_DIR, _safe_path, delete_run, list_saved_runs, load_run, save_run
+from app.services.saved_store import _safe_path, delete_run, list_saved_runs, load_run, save_run
 
 
 # ---------------------------------------------------------------------------
@@ -18,16 +15,12 @@ from app.services.saved_store import DATA_DIR, _safe_path, delete_run, list_save
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def clean_data_dir():
-    """Ensure a clean DATA_DIR before and after each test."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    for f in DATA_DIR.iterdir():
-        if f.is_file():
-            f.unlink()
-    yield
-    for f in DATA_DIR.iterdir():
-        if f.is_file():
-            f.unlink()
+def saved_dir(tmp_path, monkeypatch):
+    """Use a temporary directory for saved runs — never touches real data."""
+    test_dir = tmp_path / "saved_runs"
+    test_dir.mkdir()
+    monkeypatch.setattr("app.services.saved_store.DATA_DIR", test_dir)
+    return test_dir
 
 
 SAMPLE_PAYLOAD = {
@@ -53,11 +46,11 @@ SAMPLE_PAYLOAD = {
 # ---------------------------------------------------------------------------
 
 class TestSafePath:
-    def test_valid_uuid(self):
+    def test_valid_uuid(self, saved_dir):
         path = _safe_path("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
         assert path is not None
         assert path.suffix == ".json"
-        assert path.parent == DATA_DIR.resolve()
+        assert path.parent == saved_dir.resolve()
 
     def test_path_traversal_rejected(self):
         assert _safe_path("../../etc/passwd") is None
@@ -70,9 +63,9 @@ class TestSafePath:
         assert path is not None
         assert path.name == "my-run.json"
 
-    def test_empty_run_id(self):
+    def test_empty_run_id(self, saved_dir):
         path = _safe_path("")
-        resolved = DATA_DIR.resolve()
+        resolved = saved_dir.resolve()
         assert path is not None
         # resolved / ".json" -> this file path; shouldn't traverse
         assert path.parent == resolved
@@ -165,14 +158,14 @@ class TestListSavedRuns:
         assert items[0]["run_id"] == r2["run_id"]
         assert items[1]["run_id"] == r1["run_id"]
 
-    def test_skips_corrupt_json(self):
-        (DATA_DIR / "corrupt.json").write_text("not json", encoding="utf-8")
+    def test_skips_corrupt_json(self, saved_dir):
+        (saved_dir / "corrupt.json").write_text("not json", encoding="utf-8")
         save_run(columns=["c"], rows=[{"c": 1}], ratings={}, selected_rows={}, row_notes={}, metadata={})
         items = list_saved_runs()
         assert len(items) == 1
 
-    def test_skips_non_json_suffix(self):
-        (DATA_DIR / "readme.md").write_text("hello", encoding="utf-8")
+    def test_skips_non_json_suffix(self, saved_dir):
+        (saved_dir / "readme.md").write_text("hello", encoding="utf-8")
         assert list_saved_runs() == []
 
 
@@ -200,8 +193,8 @@ class TestLoadRun:
     def test_load_missing_returns_none(self):
         assert load_run("nonexistent-run-id") is None
 
-    def test_load_corrupt_returns_none(self):
-        (DATA_DIR / "corrupt.json").write_text("not json", encoding="utf-8")
+    def test_load_corrupt_returns_none(self, saved_dir):
+        (saved_dir / "corrupt.json").write_text("not json", encoding="utf-8")
         assert load_run("corrupt") is None
 
     def test_load_path_traversal_returns_none(self):
@@ -296,12 +289,12 @@ class TestAPI:
         r = self.client.delete("/api/saved-runs/../../etc/passwd")
         assert r.status_code == 404
 
-    def test_corrupt_does_not_crash_list(self):
-        (DATA_DIR / "corrupt.json").write_text("not json", encoding="utf-8")
+    def test_corrupt_does_not_crash_list(self, saved_dir):
+        (saved_dir / "corrupt.json").write_text("not json", encoding="utf-8")
         r = self.client.get("/api/saved-runs")
         assert r.status_code == 200
 
-    def test_corrupt_does_not_crash_load(self):
-        (DATA_DIR / "corrupt.json").write_text("not json", encoding="utf-8")
+    def test_corrupt_does_not_crash_load(self, saved_dir):
+        (saved_dir / "corrupt.json").write_text("not json", encoding="utf-8")
         r = self.client.get("/api/saved-runs/corrupt")
         assert r.status_code == 404
