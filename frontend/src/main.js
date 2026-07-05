@@ -271,6 +271,7 @@ function saveConfigSnapshot() {
 }
 
 function appliedStatusFor(keys) {
+  if (state.loading) return "Running backtest...";
   if (!state.lastRunConfigSnapshot) return "";
   const changed = keys.some(key => isConfigKeyChanged(key));
   return changed
@@ -658,6 +659,7 @@ async function handleRun() {
 
   hideError();
   setState({ loading: true });
+  updateApplyStatusBadges();
   updateRunButton();
   startTimer();
 
@@ -692,7 +694,6 @@ async function handleRun() {
     state.dirty = false;
     updateDirtyIndicator();
     saveConfigSnapshot();
-    updateApplyStatusBadges();
 
     const timing = result.timing;
     const durationStr = timing ? " — " + timing.duration_sec.toFixed(2) + "s" : "";
@@ -704,6 +705,7 @@ async function handleRun() {
   } finally {
     clearTimeout(timeoutId);
     setState({ loading: false });
+    updateApplyStatusBadges();
     updateRunButton();
     stopTimer();
   }
