@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from app.backtest.batch_engine import simulate_many_configs_summary, simulate_many_configs_with_entries_summary
+from app.backtest.batch_engine import simulate_many_configs_with_entries_summary
 from app.backtest.config import (
     DENSE_MIN_TEST_TRADES_PER_DAY,
     DENSE_MIN_TEST_WIN_RATE,
@@ -82,7 +82,11 @@ def evaluate_normal_timeframe(
     high = df["high"].to_numpy(np.float64)
     low = df["low"].to_numpy(np.float64)
     close = df["close"].to_numpy(np.float64)
+    index_ns = df.index.astype("datetime64[ns]").asi8.astype(np.int64, copy=False)
     test_start_idx = int(np.searchsorted(df.index.to_numpy(), np.datetime64(TEST_START), side="left"))
+    is_test_exit = index_ns >= np.datetime64(TEST_START).astype("datetime64[ns]").astype(np.int64)
+    days = calendar_days_ns(index_ns)
+    test_days = calendar_days_ns(index_ns, is_test_exit)
 
     signals = build_signal_variants(df=df, timeframe=timeframe, mode="normal", strategies=strategies)
     max_signal_variants = search_params.get("max_signal_variants")
@@ -107,16 +111,21 @@ def evaluate_normal_timeframe(
             sl_arr, tp_arr, mh_arr = build_config_grid(sl_values, tp_values, max_holds)
             (
                 tr_arr, wr_arr, tre_arr, pf_arr, exp_arr, mdd_arr, aw_arr, al_arr,
+                tpd_arr, mgd_arr, abh_arr,
                 ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
-            ) = simulate_many_configs_summary(
+                ttpd_arr, tmgd_arr, tabh_arr,
+            ) = simulate_many_configs_with_entries_summary(
                 open_, high, low, close, longs, shorts,
-                sl_arr, tp_arr, mh_arr, FEE_PER_SIDE, test_start_idx,
+                sl_arr, tp_arr, mh_arr, FEE_PER_SIDE,
+                test_start_idx, index_ns, days, test_days,
             )
             rows.extend(
                 batch_to_normal_rows(
                     sl_arr, tp_arr, mh_arr,
                     tr_arr, wr_arr, tre_arr, pf_arr, exp_arr, mdd_arr, aw_arr, al_arr,
+                    tpd_arr, mgd_arr, abh_arr,
                     ttr_arr, twr_arr, tre2_arr, tpf2_arr, texp_arr,
+                    ttpd_arr, tmgd_arr, tabh_arr,
                     timeframe, signal.strategy, signal.params, side_mode,
                     min_full_trades, min_test_trades, min_test_win_rate,
                     min_profit_factor, min_test_profit_factor,

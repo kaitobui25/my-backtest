@@ -1,0 +1,32 @@
+# Checklist
+
+- Update normal mode to use simulate_many_configs_with_entries_summary().
+- Keep normal mode filters, grids, and score logic unchanged.
+- In evaluate_normal_timeframe(), add:
+  - index_ns
+  - is_test_exit
+  - days
+  - test_days
+- Replace simulate_many_configs_summary() with simulate_many_configs_with_entries_summary().
+- Collect extra outputs:
+  - trades_per_day
+  - max_gap_days
+  - avg_bars_held
+  - test_trades_per_day
+  - test_max_gap_days
+  - test_avg_bars_held
+- Extend batch_to_normal_rows() to accept and return these fields.
+- Confirm same-candle entry SL/TP behavior:
+  - entry at open_[i]
+  - check SL/TP on candle i immediately
+  - if both SL and TP hit, SL wins
+  - bars_held = 0
+- Do not change signal generation.
+- Do not change normal grids.
+- Do not use dense filters for normal mode.
+- Do not replace score_candidate() with score_dense_candidate().
+- Run:
+  - python -m compileall app
+  - pytest
+  - POST /api/backtest with mode=normal
+- Verify normal mode rows no longer return null/NaN for dense-style columns.
