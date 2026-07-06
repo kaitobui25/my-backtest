@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.backtest.config import REQUIRED_COLUMNS
+from app.backtest.config import AMBIGUITY_COLUMNS, CORE_COLUMNS, EQUITY_COLUMNS, LIQUIDATION_COLUMNS, RR_COLUMNS
 from app.main import app
 from app.services.saved_store import _safe_path, delete_run, list_saved_runs, load_run, save_run
 
@@ -375,6 +375,7 @@ class TestAPI:
             "timeframes": ["M15"],
             "mode": "normal",
             "strategies": ["VOL_EXPANSION_CONT"],
+            "search_params": {"max_signal_variants": 1},
             "filters": [{"field": "win_rate", "op": ">=", "value": "0"}],
             "limit": 5,
         })
@@ -392,6 +393,7 @@ class TestAPI:
             "timeframes": ["M15"],
             "mode": "normal",
             "strategies": ["VOL_EXPANSION_CONT"],
+            "search_params": {"max_signal_variants": 1},
             "filters": [{"field": "win_rate", "op": ">=", "value": "0"}],
             "limit": 5,
         })
@@ -413,18 +415,58 @@ class TestAPI:
         r = self.client.post("/api/backtest", json={
             "timeframes": ["M15"],
             "mode": "normal",
+            "strategies": ["VOL_EXPANSION_CONT"],
+            "search_params": {"max_signal_variants": 1},
             "filters": [{"field": "win_rate", "op": ">=", "value": "0"}],
             "limit": 5,
         })
         assert r.status_code == 200
         body = r.json()
-        for col in REQUIRED_COLUMNS:
+        for col in CORE_COLUMNS:
             assert col in body["columns"], f"Missing column: {col}"
+        for col in RR_COLUMNS + AMBIGUITY_COLUMNS + EQUITY_COLUMNS + LIQUIDATION_COLUMNS:
+            assert col not in body["columns"], f"Optional column should be disabled by default: {col}"
+
+    def test_backtest_optional_columns_enabled(self):
+        r = self.client.post("/api/backtest", json={
+            "timeframes": ["M15"],
+            "mode": "normal",
+            "strategies": ["VOL_EXPANSION_CONT"],
+            "search_params": {
+                "max_signal_variants": 1,
+                "use_rr_metrics": True,
+                "compute_ambiguity_metrics": True,
+                "use_position_sizing": True,
+                "use_leverage": True,
+                "use_liquidation": True,
+                "leverage": 2,
+            },
+            "filters": [{"field": "rr", "op": ">=", "value": "0"}],
+            "limit": 5,
+        })
+        assert r.status_code == 200
+        body = r.json()
+        for col in RR_COLUMNS + AMBIGUITY_COLUMNS + EQUITY_COLUMNS + LIQUIDATION_COLUMNS:
+            assert col in body["columns"], f"Missing optional column: {col}"
+
+    def test_backtest_disabled_optional_filter_rejected(self):
+        r = self.client.post("/api/backtest", json={
+            "timeframes": ["M15"],
+            "mode": "normal",
+            "strategies": ["VOL_EXPANSION_CONT"],
+            "search_params": {"max_signal_variants": 1},
+            "filters": [{"field": "rr", "op": ">=", "value": "0"}],
+            "limit": 5,
+        })
+        assert r.status_code == 400
+        assert "metric options" in r.json()["detail"]
 
     def test_backtest_filter_works(self):
         r = self.client.post("/api/backtest", json={
             "timeframes": ["M15"],
             "mode": "normal",
+            "strategies": ["VOL_EXPANSION_CONT"],
+            "search_params": {"max_signal_variants": 1},
             "filters": [{"field": "profit_factor", "op": ">=", "value": "999"}],
             "limit": 500,
         })
@@ -436,6 +478,8 @@ class TestAPI:
         r = self.client.post("/api/backtest", json={
             "timeframes": ["M15"],
             "mode": "normal",
+            "strategies": ["VOL_EXPANSION_CONT"],
+            "search_params": {"max_signal_variants": 1},
             "filters": [{"field": "win_rate", "op": ">=", "value": "0"}],
             "limit": 3,
         })

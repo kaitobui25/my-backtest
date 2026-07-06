@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.backtest.config import (
+    AMBIGUITY_COLUMNS,
+    CORE_COLUMNS,
+    EQUITY_COLUMNS,
+    LIQUIDATION_COLUMNS,
+    RR_COLUMNS,
+)
 from app.backtest.strategy_params import GRID_PARAM_SCHEMA, STRATEGY_PARAM_SCHEMAS
 
 
@@ -21,43 +28,20 @@ INDICATORS = [
     "SQUEEZE_MOM",
     "WILLIAMS_VIX_FIX",
 ]
+FILTER_FIELD_GROUPS = {
+    "core": CORE_COLUMNS,
+    "rr": RR_COLUMNS,
+    "ambiguity": AMBIGUITY_COLUMNS,
+    "equity": EQUITY_COLUMNS,
+    "liquidation": LIQUIDATION_COLUMNS,
+}
 FILTER_FIELDS = [
-    "timeframe",
-    "strategy",
-    "params",
-    "side_mode",
-    "sl",
-    "tp",
-    "max_hold",
-    "trades",
-    "win_rate",
-    "total_return",
-    "profit_factor",
-    "expectancy",
-    "max_drawdown",
-    "avg_win",
-    "avg_loss",
-    "rr",
-    "realized_rr",
-    "test_trades",
-    "test_win_rate",
-    "test_total_return",
-    "test_profit_factor",
-    "test_expectancy",
-    "trades_per_day",
-    "max_gap_days",
-    "avg_bars_held",
-    "test_trades_per_day",
-    "test_max_gap_days",
-    "test_avg_bars_held",
-    "ambiguous_trades",
-    "ambiguous_rate",
-    "equity_total_return",
-    "equity_max_drawdown",
-    "final_equity",
-    "liquidated_trades",
-    "liquidation_rate",
-    "score",
+    *CORE_COLUMNS[:-1],
+    *RR_COLUMNS,
+    *AMBIGUITY_COLUMNS,
+    *EQUITY_COLUMNS,
+    *LIQUIDATION_COLUMNS,
+    *CORE_COLUMNS[-1:],
 ]
 OPERATORS = [">", ">=", "<", "<=", "=", "~"]
 
@@ -75,6 +59,7 @@ def options() -> dict:
         "modes": MODES,
         "indicators": INDICATORS,
         "filter_fields": FILTER_FIELDS,
+        "filter_field_groups": FILTER_FIELD_GROUPS,
         "operators": OPERATORS,
         "strategy_param_schemas": STRATEGY_PARAM_SCHEMAS,
         "grid_param_schema": GRID_PARAM_SCHEMA,

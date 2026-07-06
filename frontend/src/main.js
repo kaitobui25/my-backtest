@@ -4,6 +4,7 @@ async function init() {
     state.timeframes = opts.timeframes;
     state.strategies = opts.indicators;
     state.filterFields = opts.filter_fields;
+    state.filterFieldGroups = opts.filter_field_groups || {};
     state.operators = opts.operators;
     state.strategyParamSchemas = opts.strategy_param_schemas || {};
     state.gridParamSchema = opts.grid_param_schema || {};
@@ -131,7 +132,8 @@ function renderSelected() {
 function renderFilters() {
   const el = document.getElementById("filter-list");
   const favs = getFilterFavorites();
-  const sortedFields = [...state.filterFields].sort((a, b) => {
+  const fields = getEnabledFilterFields();
+  const sortedFields = fields.sort((a, b) => {
     const af = favs.includes(a) ? 0 : 1;
     const bf = favs.includes(b) ? 0 : 1;
     return af - bf;
@@ -179,6 +181,19 @@ function toggleFilterFavorite(field) {
   populateFilterAddControls();
 }
 
+function getEnabledFilterFields() {
+  const groups = state.filterFieldGroups || {};
+  if (!groups.core) return [...state.filterFields];
+  const fields = [...groups.core];
+  if (state.executionSettings.show_rr_metrics) fields.push(...(groups.rr || []));
+  if (state.executionSettings.compute_ambiguity_metrics) fields.push(...(groups.ambiguity || []));
+  if (state.riskSettings.use_position_sizing || state.riskSettings.use_leverage || state.riskSettings.use_liquidation) {
+    fields.push(...(groups.equity || []));
+  }
+  if (state.riskSettings.use_liquidation) fields.push(...(groups.liquidation || []));
+  return fields.filter((field, idx) => fields.indexOf(field) === idx);
+}
+
 function formatCsvValue(v) {
   if (v == null) return "";
   if (Array.isArray(v)) return v.join(", ");
@@ -207,7 +222,7 @@ function getProfileDefaults(profile) {
 }
 
 function applyGridDefaults(overwrite) {
-  const profile = state.gridSettings.profile || "dense";
+  const profile = state.gridSettings.profile || "normal";
   const defs = getProfileDefaults(profile);
   const gs = state.gridSettings;
   if (overwrite || !gs.sl_values) gs.sl_values = formatCsvValue(defs.sl_values);
@@ -232,6 +247,8 @@ function snapshotCurrentConfig() {
     useSpread: String(state.executionSettings.use_spread_slippage),
     spreadPct: String(state.executionSettings.spread_pct),
     slippagePct: String(state.executionSettings.slippage_pct),
+    useRRMetrics: String(state.executionSettings.show_rr_metrics),
+    computeAmbiguity: String(state.executionSettings.compute_ambiguity_metrics),
     usePositionSizing: String(state.riskSettings.use_position_sizing),
     riskPerTradePct: String(state.riskSettings.risk_per_trade_pct),
     useLeverage: String(state.riskSettings.use_leverage),
@@ -258,6 +275,8 @@ function getConfigValue(key) {
     case "useSpread": return String(state.executionSettings.use_spread_slippage);
     case "spreadPct": return String(state.executionSettings.spread_pct);
     case "slippagePct": return String(state.executionSettings.slippage_pct);
+    case "useRRMetrics": return String(state.executionSettings.show_rr_metrics);
+    case "computeAmbiguity": return String(state.executionSettings.compute_ambiguity_metrics);
     case "usePositionSizing": return String(state.riskSettings.use_position_sizing);
     case "riskPerTradePct": return String(state.riskSettings.risk_per_trade_pct);
     case "useLeverage": return String(state.riskSettings.use_leverage);
@@ -300,7 +319,7 @@ function updateApplyStatusBadges() {
   };
   setBadge("filters-apply-status", ["filters"]);
   setBadge("grid-apply-status", ["gridProfile", "gridSl", "gridTp", "gridMh", "gridMtpd", "gridMttpd"]);
-  setBadge("execution-apply-status", ["entryMode", "useSpread", "spreadPct", "slippagePct"]);
+  setBadge("execution-apply-status", ["entryMode", "useSpread", "spreadPct", "slippagePct", "useRRMetrics", "computeAmbiguity"]);
   setBadge("risk-apply-status", ["usePositionSizing", "riskPerTradePct", "useLeverage", "leverage", "useLiquidation", "maintenanceMarginPct"]);
 }
 
@@ -373,6 +392,18 @@ function renderExecutionSettings() {
         <label>Slippage %</label>
         <input type="number" id="exec-slippage-pct" value="${es.slippage_pct}" min="0" max="0.1" step="0.0001" ${es.use_spread_slippage ? "" : "disabled"} ${locked ? "disabled" : ""}>
       </div>
+    </div>
+    <div class="exec-row">
+      <label class="exec-checkbox">
+        <input type="checkbox" id="exec-show-rr" ${es.show_rr_metrics ? "checked" : ""} ${locked ? "disabled" : ""}>
+        Show RR metrics
+      </label>
+    </div>
+    <div class="exec-row">
+      <label class="exec-checkbox">
+        <input type="checkbox" id="exec-compute-ambiguity" ${es.compute_ambiguity_metrics ? "checked" : ""} ${locked ? "disabled" : ""}>
+        Compute ambiguity metrics
+      </label>
     </div>
   `;
 }
@@ -459,7 +490,7 @@ function renderRunningConfig() {
   const sp = snap.search_params;
   if (sp) {
     html += '<div class="config-section"><div class="config-section-title">Search Grid</div>';
-    html += '<div class="config-row"><span class="config-label">Profile</span><span class="config-value">' + (sp.grid_profile || "dense") + '</span></div>';
+    html += '<div class="config-row"><span class="config-label">Profile</span><span class="config-value">' + (sp.grid_profile || "normal") + '</span></div>';
     if (sp.sl_values) html += '<div class="config-row"><span class="config-label">SL values</span><span class="config-value">' + (Array.isArray(sp.sl_values) ? sp.sl_values.join(", ") : sp.sl_values) + '</span></div>';
     if (sp.tp_values) html += '<div class="config-row"><span class="config-label">TP values</span><span class="config-value">' + (Array.isArray(sp.tp_values) ? sp.tp_values.join(", ") : sp.tp_values) + '</span></div>';
     if (sp.max_holds) html += '<div class="config-row"><span class="config-label">Max holds</span><span class="config-value">' + (Array.isArray(sp.max_holds) ? sp.max_holds.join(", ") : sp.max_holds) + '</span></div>';
@@ -473,6 +504,8 @@ function renderRunningConfig() {
       html += '<div class="config-row"><span class="config-label">Spread %</span><span class="config-value">' + (sp.spread_pct != null ? sp.spread_pct : 0) + '</span></div>';
       html += '<div class="config-row"><span class="config-label">Slippage %</span><span class="config-value">' + (sp.slippage_pct != null ? sp.slippage_pct : 0) + '</span></div>';
     }
+    html += '<div class="config-row"><span class="config-label">RR metrics</span><span class="config-value">' + (sp.use_rr_metrics ? "yes" : "no") + '</span></div>';
+    html += '<div class="config-row"><span class="config-label">Ambiguity metrics</span><span class="config-value">' + (sp.compute_ambiguity_metrics ? "yes" : "no") + '</span></div>';
     html += '</div>';
     html += '<div class="config-section"><div class="config-section-title">Risk / Leverage</div>';
     html += '<div class="config-row"><span class="config-label">Position sizing</span><span class="config-value">' + (sp.use_position_sizing ? "yes" : "no") + '</span></div>';
@@ -530,7 +563,7 @@ function saveSettings() {
 function populateFilterAddControls() {
   const fieldSel = document.getElementById("filter-field-add");
   const favs = getFilterFavorites();
-  const sortedFields = [...state.filterFields].sort((a, b) => {
+  const sortedFields = getEnabledFilterFields().sort((a, b) => {
     const af = favs.includes(a) ? 0 : 1;
     const bf = favs.includes(b) ? 0 : 1;
     return af - bf;
@@ -627,6 +660,8 @@ function buildSearchParams() {
   params.use_spread_slippage = es.use_spread_slippage;
   params.spread_pct = Number(es.spread_pct) || 0;
   params.slippage_pct = Number(es.slippage_pct) || 0;
+  params.use_rr_metrics = es.show_rr_metrics;
+  params.compute_ambiguity_metrics = es.compute_ambiguity_metrics;
   params.use_position_sizing = state.riskSettings.use_position_sizing;
   params.risk_per_trade_pct = Number(state.riskSettings.risk_per_trade_pct) || 1.0;
   params.use_leverage = state.riskSettings.use_leverage;
@@ -970,6 +1005,21 @@ function bindEvents() {
       state.executionSettings.use_spread_slippage = target.checked;
       renderExecutionSettings();
       dirtyTrack("useSpread");
+      updateApplyStatusBadges();
+    }
+    if (target.id === "exec-show-rr") {
+      state.executionSettings.show_rr_metrics = target.checked;
+      renderFilters();
+      populateFilterAddControls();
+      dirtyTrack("useRRMetrics");
+      updateApplyStatusBadges();
+    }
+    if (target.id === "exec-compute-ambiguity") {
+      state.executionSettings.compute_ambiguity_metrics = target.checked;
+      renderFilters();
+      populateFilterAddControls();
+      dirtyTrack("computeAmbiguity");
+      updateApplyStatusBadges();
     }
   });
 
@@ -994,17 +1044,26 @@ function bindEvents() {
     if (target.id === "risk-use-sizing") {
       state.riskSettings.use_position_sizing = target.checked;
       renderRiskSettings();
+      renderFilters();
+      populateFilterAddControls();
       dirtyTrack("usePositionSizing");
+      updateApplyStatusBadges();
     }
     if (target.id === "risk-use-leverage") {
       state.riskSettings.use_leverage = target.checked;
       renderRiskSettings();
+      renderFilters();
+      populateFilterAddControls();
       dirtyTrack("useLeverage");
+      updateApplyStatusBadges();
     }
     if (target.id === "risk-use-liq") {
       state.riskSettings.use_liquidation = target.checked;
       renderRiskSettings();
+      renderFilters();
+      populateFilterAddControls();
       dirtyTrack("useLiquidation");
+      updateApplyStatusBadges();
     }
     if (target.id === "risk-per-trade") {
       state.riskSettings.risk_per_trade_pct = Number(target.value);
@@ -1146,7 +1205,7 @@ async function handleLoadSavedRun(runId) {
 
     const sp = meta.search_params;
     if (sp) {
-      state.gridSettings.profile = sp.grid_profile || "dense";
+      state.gridSettings.profile = sp.grid_profile || "normal";
       state.gridSettings.sl_values = Array.isArray(sp.sl_values) ? sp.sl_values.join(", ") : "";
       state.gridSettings.tp_values = Array.isArray(sp.tp_values) ? sp.tp_values.join(", ") : "";
       state.gridSettings.max_holds = Array.isArray(sp.max_holds) ? sp.max_holds.join(", ") : "";
@@ -1162,6 +1221,8 @@ async function handleLoadSavedRun(runId) {
       state.executionSettings.use_spread_slippage = sp.use_spread_slippage === true;
       state.executionSettings.spread_pct = sp.spread_pct ?? 0;
       state.executionSettings.slippage_pct = sp.slippage_pct ?? 0;
+      state.executionSettings.show_rr_metrics = sp.use_rr_metrics === true;
+      state.executionSettings.compute_ambiguity_metrics = sp.compute_ambiguity_metrics === true;
       state.riskSettings.use_position_sizing = sp.use_position_sizing === true;
       state.riskSettings.risk_per_trade_pct = sp.risk_per_trade_pct ?? 1.0;
       state.riskSettings.use_leverage = sp.use_leverage === true;

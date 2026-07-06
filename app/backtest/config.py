@@ -36,7 +36,7 @@ DENSE_MIN_TEST_WIN_RATE = 75.0
 DENSE_MIN_TRADES_PER_DAY = 0.33
 DENSE_MIN_TEST_TRADES_PER_DAY = 0.33
 
-REQUIRED_COLUMNS = [
+CORE_COLUMNS = [
     "timeframe",
     "strategy",
     "params",
@@ -52,8 +52,6 @@ REQUIRED_COLUMNS = [
     "max_drawdown",
     "avg_win",
     "avg_loss",
-    "rr",
-    "realized_rr",
     "test_trades",
     "test_win_rate",
     "test_total_return",
@@ -65,15 +63,58 @@ REQUIRED_COLUMNS = [
     "test_trades_per_day",
     "test_max_gap_days",
     "test_avg_bars_held",
+    "score",
+]
+
+RR_COLUMNS = [
+    "rr",
+    "realized_rr",
+]
+
+AMBIGUITY_COLUMNS = [
     "ambiguous_trades",
     "ambiguous_rate",
+]
+
+EQUITY_COLUMNS = [
     "equity_total_return",
     "equity_max_drawdown",
     "final_equity",
+]
+
+LIQUIDATION_COLUMNS = [
     "liquidated_trades",
     "liquidation_rate",
-    "score",
 ]
+
+REQUIRED_COLUMNS = [
+    *CORE_COLUMNS[:-1],
+    *RR_COLUMNS,
+    *AMBIGUITY_COLUMNS,
+    *EQUITY_COLUMNS,
+    *LIQUIDATION_COLUMNS,
+    *CORE_COLUMNS[-1:],
+]
+
+
+def result_columns_for_params(search_params: dict | None = None) -> list[str]:
+    search_params = search_params or {}
+    columns = list(CORE_COLUMNS)
+    insert_at = columns.index("score")
+    optional: list[str] = []
+    if search_params.get("use_rr_metrics", False):
+        optional.extend(RR_COLUMNS)
+    if search_params.get("compute_ambiguity_metrics", False):
+        optional.extend(AMBIGUITY_COLUMNS)
+    if (
+        search_params.get("use_position_sizing", False)
+        or search_params.get("use_leverage", False)
+        or search_params.get("use_liquidation", False)
+    ):
+        optional.extend(EQUITY_COLUMNS)
+    if search_params.get("use_liquidation", False):
+        optional.extend(LIQUIDATION_COLUMNS)
+    return columns[:insert_at] + optional + columns[insert_at:]
 
 
 def normal_grid_for_timeframe(timeframe: str) -> tuple[list[float], list[float], list[int]]:

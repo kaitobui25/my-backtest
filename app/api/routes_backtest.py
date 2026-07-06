@@ -12,8 +12,8 @@ from fastapi.encoders import jsonable_encoder
 
 from app.api.routes_options import FILTER_FIELDS, INDICATORS, MODES, OPERATORS, TIMEFRAMES
 from app.api.schemas import BacktestRequest, BacktestResponse, ResultFilter, TimingInfo
-from app.backtest.config import SYMBOL
-from app.backtest.runner import run_search
+from app.backtest.config import SYMBOL, result_columns_for_params
+from app.backtest.runner import run_search_limited
 
 
 router = APIRouter(prefix="/api", tags=["backtest"])
@@ -41,6 +41,18 @@ def validate_request(request: BacktestRequest) -> None:
     ]
     if invalid_filters:
         raise HTTPException(status_code=400, detail=f"Invalid filters: {invalid_filters}")
+
+    enabled_fields = set(result_columns_for_params(request.search_params))
+    disabled_filters = [
+        item.field
+        for item in request.filters
+        if item.field in FILTER_FIELDS and item.field not in enabled_fields
+    ]
+    if disabled_filters:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Filter fields require enabling their metric options first: {disabled_filters}",
+        )
 
     if request.limit < 1:
         raise HTTPException(status_code=400, detail="limit must be >= 1")
@@ -106,13 +118,14 @@ def run_backtest(request: BacktestRequest) -> BacktestResponse:
     started_at = datetime.now(timezone.utc)
     t0 = time.perf_counter()
 
-    df = run_search(
+    df = run_search_limited(
         timeframes=request.timeframes,
         mode=request.mode,
         strategies=request.strategies,
         search_params=request.search_params,
+        result_filters=request.filters,
+        limit=request.limit,
     )
-    df = apply_filters(df, request)
 
     finished_at = datetime.now(timezone.utc)
     duration_sec = round(time.perf_counter() - t0, 4)

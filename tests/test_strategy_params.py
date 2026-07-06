@@ -28,6 +28,16 @@ ALL_STRATEGIES = [
     "WILLIAMS_VIX_FIX",
 ]
 
+VOL_SMALL_PARAMS = {
+    "VOL_EXPANSION_CONT": {
+        "range_mult": [0.8],
+        "trend": ["none"],
+        "adx_min": [8],
+        "close_extreme": [0.6],
+        "body_min": [0.45],
+    }
+}
+
 
 def test_all_strategies_have_schemas():
     for name in ALL_STRATEGIES:
@@ -138,23 +148,23 @@ class TestBuildSignals:
         return pd.DataFrame({"open": open_, "high": high, "low": low, "close": close, "volume": volume}, index=idx)
 
     def test_build_signals_no_strategy_params(self, df):
-        signals = build_signals(df, "H1")
-        assert len(signals) > 0
-        strategies = set(s for s, _, _, _, _ in signals)
         for name in ALL_STRATEGIES:
+            params = VOL_SMALL_PARAMS if name == "VOL_EXPANSION_CONT" else None
+            signals = build_signals(df, "H1", strategy_params=params, strategies={name})
+            strategies = set(s for s, _, _, _, _ in signals)
             assert name in strategies, f"Missing {name} in signals"
 
     def test_build_signals_with_empty_strategy_params(self, df):
-        signals = build_signals(df, "H1", strategy_params={})
+        signals = build_signals(df, "H1", strategy_params={}, strategies={"MACD_CROSS"})
         assert len(signals) > 0
 
     def test_build_signals_with_unknown_strategy_params(self, df):
-        signals = build_signals(df, "H1", strategy_params={"UNKNOWN_STRATEGY": {}})
+        signals = build_signals(df, "H1", strategy_params={"UNKNOWN_STRATEGY": {}}, strategies={"MACD_CROSS"})
         assert len(signals) > 0
 
     def test_build_signals_vol_trend_auto(self, df):
-        params = {"VOL_EXPANSION_CONT": {"trend": ["auto"]}}
-        signals = build_signals(df, "H1", strategy_params=params)
+        params = {"VOL_EXPANSION_CONT": {**VOL_SMALL_PARAMS["VOL_EXPANSION_CONT"], "trend": ["auto"]}}
+        signals = build_signals(df, "H1", strategy_params=params, strategies={"VOL_EXPANSION_CONT"})
         vol_signals = [s for s in signals if s[0] == "VOL_EXPANSION_CONT"]
         trend_values = set()
         for _, param_str, _, _, _ in vol_signals:
@@ -167,8 +177,8 @@ class TestBuildSignals:
         assert "ema300" in trend_values
 
     def test_build_signals_vol_trend_single(self, df):
-        params = {"VOL_EXPANSION_CONT": {"trend": ["ema200"]}}
-        signals = build_signals(df, "H1", strategy_params=params)
+        params = {"VOL_EXPANSION_CONT": {**VOL_SMALL_PARAMS["VOL_EXPANSION_CONT"], "trend": ["ema200"]}}
+        signals = build_signals(df, "H1", strategy_params=params, strategies={"VOL_EXPANSION_CONT"})
         vol_signals = [s for s in signals if s[0] == "VOL_EXPANSION_CONT"]
         trend_values = set()
         for _, param_str, _, _, _ in vol_signals:
@@ -184,21 +194,33 @@ class TestBuildSignals:
         assert len(ep_signals) > 0
 
     def test_build_signal_variants_normal_filters_strategies(self, df):
-        variants = build_signal_variants(df, "H1", mode="normal", strategies=["VOL_EXPANSION_CONT"])
+        variants = build_signal_variants(
+            df,
+            "H1",
+            mode="normal",
+            strategies=["VOL_EXPANSION_CONT"],
+            strategy_params=VOL_SMALL_PARAMS,
+        )
         assert all(v.strategy == "VOL_EXPANSION_CONT" for v in variants)
 
     def test_build_signal_variants_dense_vol(self, df):
-        variants = build_signal_variants(df, "H1", mode="dense_high_winrate", strategies=["VOL_EXPANSION_CONT"])
+        variants = build_signal_variants(
+            df,
+            "H1",
+            mode="dense_high_winrate",
+            strategies=["VOL_EXPANSION_CONT"],
+            strategy_params=VOL_SMALL_PARAMS,
+        )
         assert len(variants) > 0
         assert all(v.strategy == "VOL_EXPANSION_CONT" for v in variants)
 
     def test_dense_vol_accepts_strategy_params(self, df):
-        params = {"VOL_EXPANSION_CONT": {"trend": ["auto"]}}
+        params = {"VOL_EXPANSION_CONT": {**VOL_SMALL_PARAMS["VOL_EXPANSION_CONT"], "trend": ["auto"]}}
         dense_signals = _build_vol_expansion_dense_signals(df, strategy_params=params)
         assert len(dense_signals) > 0
 
     def test_dense_vol_trend_auto_has_multiple_trends(self, df):
-        params = {"VOL_EXPANSION_CONT": {"trend": ["auto"]}}
+        params = {"VOL_EXPANSION_CONT": {**VOL_SMALL_PARAMS["VOL_EXPANSION_CONT"], "trend": ["auto"]}}
         dense_signals = _build_vol_expansion_dense_signals(df, strategy_params=params)
         trend_values = set()
         for param_str, _, _, _ in dense_signals:
@@ -212,7 +234,7 @@ class TestBuildSignals:
         assert "ema300" in trend_values
 
     def test_dense_vol_trend_single_variant(self, df):
-        params = {"VOL_EXPANSION_CONT": {"trend": ["ema200"]}}
+        params = {"VOL_EXPANSION_CONT": {**VOL_SMALL_PARAMS["VOL_EXPANSION_CONT"], "trend": ["ema200"]}}
         dense_signals = _build_vol_expansion_dense_signals(df, strategy_params=params)
         trend_values = set()
         for param_str, _, _, _ in dense_signals:

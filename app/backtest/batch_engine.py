@@ -284,6 +284,7 @@ def simulate_many_configs_with_entries_summary(
     leverage: float = 1.0,
     use_liquidation: bool = False,
     maintenance_margin_pct: float = 0.5,
+    compute_ambiguity_metrics: bool = True,
 ) -> tuple[
     np.ndarray,
     np.ndarray,
@@ -389,7 +390,7 @@ def simulate_many_configs_with_entries_summary(
                     tp_price = entry * (1.0 + tp)
                     hit_sl = low[i] <= sl_price
                     hit_tp = high[i] >= tp_price
-                    if hit_sl and hit_tp:
+                    if compute_ambiguity_metrics and hit_sl and hit_tp:
                         ambiguous_trades += 1
                     liq_price = 0.0
                     hit_liq = False
@@ -428,7 +429,7 @@ def simulate_many_configs_with_entries_summary(
                     tp_price = entry * (1.0 - tp)
                     hit_sl = high[i] >= sl_price
                     hit_tp = low[i] <= tp_price
-                    if hit_sl and hit_tp:
+                    if compute_ambiguity_metrics and hit_sl and hit_tp:
                         ambiguous_trades += 1
                     liq_price = 0.0
                     hit_liq = False
@@ -476,7 +477,7 @@ def simulate_many_configs_with_entries_summary(
                         tp_price = entry * (1.0 + tp)
                         hit_sl = low[i] <= sl_price
                         hit_tp = high[i] >= tp_price
-                        if hit_sl and hit_tp:
+                        if compute_ambiguity_metrics and hit_sl and hit_tp:
                             ambiguous_trades += 1
                         liq_price = 0.0
                         hit_liq = False
@@ -520,7 +521,7 @@ def simulate_many_configs_with_entries_summary(
                         tp_price = entry * (1.0 - tp)
                         hit_sl = high[i] >= sl_price
                         hit_tp = low[i] <= tp_price
-                        if hit_sl and hit_tp:
+                        if compute_ambiguity_metrics and hit_sl and hit_tp:
                             ambiguous_trades += 1
                         liq_price = 0.0
                         hit_liq = False

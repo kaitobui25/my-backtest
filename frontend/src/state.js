@@ -8,6 +8,7 @@ const state = {
     { field: "profit_factor", op: ">=", value: "1.2" },
   ],
   filterFields: [],
+  filterFieldGroups: {},
   operators: [],
   mode: "normal",
   columns: [],
@@ -34,7 +35,7 @@ const state = {
   strategySettings: {},
   activeStrategy: null,
   gridSettings: {
-    profile: "dense",
+    profile: "normal",
     sl_values: "",
     tp_values: "",
     max_holds: "",
@@ -48,7 +49,8 @@ const state = {
     use_spread_slippage: false,
     spread_pct: 0,
     slippage_pct: 0,
-    show_ambiguity_metrics: true,
+    show_rr_metrics: false,
+    compute_ambiguity_metrics: false,
   },
   riskSettings: {
     use_position_sizing: false,

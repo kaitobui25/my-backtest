@@ -68,6 +68,10 @@ def batch_to_normal_rows(
     equity_max_drawdown_arr: np.ndarray | None = None,
     final_equity_arr: np.ndarray | None = None,
     liquidated_trades_arr: np.ndarray | None = None,
+    include_rr_metrics: bool = True,
+    include_ambiguity_metrics: bool = True,
+    include_equity_metrics: bool = True,
+    include_liquidation_metrics: bool = True,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for c in range(len(sl_arr)):
@@ -108,46 +112,49 @@ def batch_to_normal_rows(
         fin_eq = float(final_equity_arr[c]) if final_equity_arr is not None else float("nan")
         liq_tr = int(liquidated_trades_arr[c]) if liquidated_trades_arr is not None else 0
 
-        rows.append(
-            {
-                "timeframe": timeframe,
-                "strategy": strategy,
-                "params": params,
-                "side_mode": side_mode,
-                "sl": sl_val,
-                "tp": tp_val,
-                "max_hold": int(max_hold_arr[c]),
-                "trades": trades,
-                "win_rate": wr,
-                "total_return": total_ret,
-                "profit_factor": pf,
-                "expectancy": exp,
-                "max_drawdown": mdd,
-                "avg_win": aw,
-                "avg_loss": al,
-                "rr": _compute_rr(tp_val, sl_val),
-                "realized_rr": _compute_realized_rr(aw, al),
-                "trades_per_day": float(trades_per_day_arr[c]),
-                "max_gap_days": float(max_gap_days_arr[c]),
-                "avg_bars_held": float(avg_bars_held_arr[c]),
-                "test_trades": test_trades,
-                "test_win_rate": test_wr,
-                "test_total_return": test_ret,
-                "test_profit_factor": test_pf,
-                "test_expectancy": test_exp,
-                "test_trades_per_day": float(test_trades_per_day_arr[c]),
-                "test_max_gap_days": float(test_max_gap_days_arr[c]),
-                "test_avg_bars_held": float(test_avg_bars_held_arr[c]),
-                "ambiguous_trades": ambiguous_trades,
-                "ambiguous_rate": _compute_ambiguous_rate(ambiguous_trades, trades),
-                "equity_total_return": eq_tr,
-                "equity_max_drawdown": eq_mdd,
-                "final_equity": fin_eq,
-                "liquidated_trades": liq_tr,
-                "liquidation_rate": _compute_liquidation_rate(liq_tr, trades),
-                "score": score,
-            }
-        )
+        row = {
+            "timeframe": timeframe,
+            "strategy": strategy,
+            "params": params,
+            "side_mode": side_mode,
+            "sl": sl_val,
+            "tp": tp_val,
+            "max_hold": int(max_hold_arr[c]),
+            "trades": trades,
+            "win_rate": wr,
+            "total_return": total_ret,
+            "profit_factor": pf,
+            "expectancy": exp,
+            "max_drawdown": mdd,
+            "avg_win": aw,
+            "avg_loss": al,
+            "trades_per_day": float(trades_per_day_arr[c]),
+            "max_gap_days": float(max_gap_days_arr[c]),
+            "avg_bars_held": float(avg_bars_held_arr[c]),
+            "test_trades": test_trades,
+            "test_win_rate": test_wr,
+            "test_total_return": test_ret,
+            "test_profit_factor": test_pf,
+            "test_expectancy": test_exp,
+            "test_trades_per_day": float(test_trades_per_day_arr[c]),
+            "test_max_gap_days": float(test_max_gap_days_arr[c]),
+            "test_avg_bars_held": float(test_avg_bars_held_arr[c]),
+            "score": score,
+        }
+        if include_rr_metrics:
+            row["rr"] = _compute_rr(tp_val, sl_val)
+            row["realized_rr"] = _compute_realized_rr(aw, al)
+        if include_ambiguity_metrics:
+            row["ambiguous_trades"] = ambiguous_trades
+            row["ambiguous_rate"] = _compute_ambiguous_rate(ambiguous_trades, trades)
+        if include_equity_metrics:
+            row["equity_total_return"] = eq_tr
+            row["equity_max_drawdown"] = eq_mdd
+            row["final_equity"] = fin_eq
+        if include_liquidation_metrics:
+            row["liquidated_trades"] = liq_tr
+            row["liquidation_rate"] = _compute_liquidation_rate(liq_tr, trades)
+        rows.append(row)
     return rows
 
 
@@ -187,6 +194,10 @@ def batch_to_dense_rows(
     equity_max_drawdown_arr: np.ndarray | None = None,
     final_equity_arr: np.ndarray | None = None,
     liquidated_trades_arr: np.ndarray | None = None,
+    include_rr_metrics: bool = True,
+    include_ambiguity_metrics: bool = True,
+    include_equity_metrics: bool = True,
+    include_liquidation_metrics: bool = True,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for c in range(len(sl_arr)):
@@ -244,44 +255,47 @@ def batch_to_dense_rows(
         fin_eq = float(final_equity_arr[c]) if final_equity_arr is not None else float("nan")
         liq_tr = int(liquidated_trades_arr[c]) if liquidated_trades_arr is not None else 0
 
-        rows.append(
-            {
-                "timeframe": timeframe,
-                "strategy": strategy,
-                "params": params,
-                "side_mode": side_mode,
-                "sl": sl_val,
-                "tp": tp_val,
-                "max_hold": int(max_hold_arr[c]),
-                "trades": trades,
-                "win_rate": wr,
-                "total_return": total_ret,
-                "profit_factor": pf,
-                "expectancy": exp,
-                "max_drawdown": mdd,
-                "avg_win": aw,
-                "avg_loss": al,
-                "rr": _compute_rr(tp_val, sl_val),
-                "realized_rr": _compute_realized_rr(aw, al),
-                "trades_per_day": tpd,
-                "max_gap_days": float(max_gap_days_arr[c]),
-                "avg_bars_held": float(avg_bars_held_arr[c]),
-                "test_trades": test_trades,
-                "test_win_rate": test_wr,
-                "test_total_return": test_ret,
-                "test_profit_factor": test_pf,
-                "test_expectancy": test_exp,
-                "test_trades_per_day": test_tpd,
-                "test_max_gap_days": float(test_max_gap_days_arr[c]),
-                "test_avg_bars_held": float(test_avg_bars_held_arr[c]),
-                "ambiguous_trades": ambiguous_trades,
-                "ambiguous_rate": _compute_ambiguous_rate(ambiguous_trades, trades),
-                "equity_total_return": eq_tr,
-                "equity_max_drawdown": eq_mdd,
-                "final_equity": fin_eq,
-                "liquidated_trades": liq_tr,
-                "liquidation_rate": _compute_liquidation_rate(liq_tr, trades),
-                "score": score,
-            }
-        )
+        row = {
+            "timeframe": timeframe,
+            "strategy": strategy,
+            "params": params,
+            "side_mode": side_mode,
+            "sl": sl_val,
+            "tp": tp_val,
+            "max_hold": int(max_hold_arr[c]),
+            "trades": trades,
+            "win_rate": wr,
+            "total_return": total_ret,
+            "profit_factor": pf,
+            "expectancy": exp,
+            "max_drawdown": mdd,
+            "avg_win": aw,
+            "avg_loss": al,
+            "trades_per_day": tpd,
+            "max_gap_days": float(max_gap_days_arr[c]),
+            "avg_bars_held": float(avg_bars_held_arr[c]),
+            "test_trades": test_trades,
+            "test_win_rate": test_wr,
+            "test_total_return": test_ret,
+            "test_profit_factor": test_pf,
+            "test_expectancy": test_exp,
+            "test_trades_per_day": test_tpd,
+            "test_max_gap_days": float(test_max_gap_days_arr[c]),
+            "test_avg_bars_held": float(test_avg_bars_held_arr[c]),
+            "score": score,
+        }
+        if include_rr_metrics:
+            row["rr"] = _compute_rr(tp_val, sl_val)
+            row["realized_rr"] = _compute_realized_rr(aw, al)
+        if include_ambiguity_metrics:
+            row["ambiguous_trades"] = ambiguous_trades
+            row["ambiguous_rate"] = _compute_ambiguous_rate(ambiguous_trades, trades)
+        if include_equity_metrics:
+            row["equity_total_return"] = eq_tr
+            row["equity_max_drawdown"] = eq_mdd
+            row["final_equity"] = fin_eq
+        if include_liquidation_metrics:
+            row["liquidated_trades"] = liq_tr
+            row["liquidation_rate"] = _compute_liquidation_rate(liq_tr, trades)
+        rows.append(row)
     return rows
