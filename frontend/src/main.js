@@ -12,6 +12,7 @@ async function init() {
     renderAll();
     initTable();
     bindEvents();
+    loadSettings();
     refreshSavedRuns();
   } catch (e) {
     showError("Failed to load options: " + parseApiError(e));
@@ -498,6 +499,34 @@ function dirtyTrack(key) {
   }
 }
 
+function applySettingsUI() {
+  const enabled = document.getElementById("setting-disable-timeout").checked;
+  document.getElementById("setting-timeout").className = enabled ? "" : "disabled";
+  document.getElementById("setting-timeout").disabled = !enabled;
+  const timeoutVal = parseInt(document.getElementById("setting-timeout").value, 10) || 300000;
+  setRequestTimeoutMs(enabled ? timeoutVal : 0);
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem("myBacktest.settings");
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    document.getElementById("setting-timeout").value = s.timeoutMs != null ? s.timeoutMs : 300000;
+    document.getElementById("setting-disable-timeout").checked = s.enabled !== false;
+    applySettingsUI();
+  } catch (e) {
+    localStorage.removeItem("myBacktest.settings");
+  }
+}
+
+function saveSettings() {
+  const timeoutVal = parseInt(document.getElementById("setting-timeout").value, 10) || 300000;
+  const enabled = document.getElementById("setting-disable-timeout").checked;
+  localStorage.setItem("myBacktest.settings", JSON.stringify({ timeoutMs: timeoutVal, enabled: enabled }));
+  applySettingsUI();
+}
+
 function populateFilterAddControls() {
   const fieldSel = document.getElementById("filter-field-add");
   const favs = getFilterFavorites();
@@ -725,7 +754,8 @@ async function handleRun() {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutMs = getRequestTimeoutMs();
+  const timeoutId = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
   hideError();
   setState({ loading: true });
@@ -779,7 +809,7 @@ async function handleRun() {
     showError(parseApiError(e));
     showStatus("Error");
   } finally {
-    clearTimeout(timeoutId);
+    if (timeoutId !== null) clearTimeout(timeoutId);
     setState({ loading: false });
     renderSearchGrid();
     renderExecutionSettings();
@@ -1019,6 +1049,21 @@ function bindEvents() {
     const delBtn = e.target.closest(".saved-delete-btn");
     if (delBtn) handleDeleteSavedRun(delBtn.dataset.runId);
   });
+
+  document.getElementById("btn-settings").addEventListener("click", () => {
+    document.getElementById("settings-overlay").className = "overlay-visible";
+  });
+  document.getElementById("settings-close").addEventListener("click", () => {
+    document.getElementById("settings-overlay").className = "overlay-hidden";
+  });
+  document.getElementById("settings-overlay").addEventListener("click", e => {
+    if (e.target === e.currentTarget) {
+      document.getElementById("settings-overlay").className = "overlay-hidden";
+    }
+  });
+  document.getElementById("setting-timeout").addEventListener("change", saveSettings);
+  document.getElementById("setting-timeout").addEventListener("input", saveSettings);
+  document.getElementById("setting-disable-timeout").addEventListener("change", saveSettings);
 }
 
 async function handleSave() {

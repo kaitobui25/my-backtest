@@ -103,6 +103,20 @@
       </div>
     </div>
   </div>
+  <button id="btn-settings" title="Settings">&#9881;</button>
+
+  <div id="settings-overlay" class="overlay-hidden">
+    <div class="settings-panel">
+      <div class="settings-header">Settings <span class="settings-close" id="settings-close">&times;</span></div>
+      <div class="settings-body">
+        <div class="setting-row" id="setting-timeout-row">
+          <label>Timeout (ms)</label>
+          <input type="checkbox" id="setting-disable-timeout">
+          <input type="number" id="setting-timeout" value="300000" min="1000" step="1000">
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="src/state.js"></script>

@@ -1,5 +1,12 @@
 const API_BASE = "http://127.0.0.1:8000/api";
-const REQUEST_TIMEOUT_MS = 300000;
+let REQUEST_TIMEOUT_MS = 300000;
+
+function getRequestTimeoutMs() {
+  return REQUEST_TIMEOUT_MS;
+}
+function setRequestTimeoutMs(ms) {
+  REQUEST_TIMEOUT_MS = ms;
+}
 
 function parseApiError(err) {
   if (err.name === "AbortError") return "Backtest request timed out in the browser. The backend may still be finishing the old run. Try fewer timeframes/strategies, wait a bit before running again, or check the backend console.";
