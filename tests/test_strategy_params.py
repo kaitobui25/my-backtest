@@ -5,10 +5,12 @@ import pandas as pd
 import pytest
 
 from app.backtest.strategy_params import STRATEGY_PARAM_SCHEMAS, get_default_params
+from app.backtest.indicators import adx, atr, ema, rsi
 from app.backtest.signals import (
     _expand_range,
     _params_for,
     _resolve_trend_selection,
+    build_indicator_context,
     build_signals,
     build_signal_variants,
     _build_vol_expansion_dense_signals,
@@ -161,6 +163,37 @@ class TestBuildSignals:
     def test_build_signals_with_unknown_strategy_params(self, df):
         signals = build_signals(df, "H1", strategy_params={"UNKNOWN_STRATEGY": {}}, strategies={"MACD_CROSS"})
         assert len(signals) > 0
+
+    def test_indicator_context_matches_direct_indicators(self, df):
+        ctx = build_indicator_context(df)
+        pd.testing.assert_series_equal(ctx.atr14, atr(df, 14))
+        pd.testing.assert_series_equal(ctx.atr100, atr(df, 100))
+        pd.testing.assert_series_equal(ctx.adx14, adx(df, 14))
+        pd.testing.assert_series_equal(ctx.rsi14, rsi(df["close"], 14))
+        pd.testing.assert_series_equal(ctx.ema20, ema(df["close"], 20))
+        pd.testing.assert_series_equal(ctx.ema34, ema(df["close"], 34))
+        pd.testing.assert_series_equal(ctx.ema50, ema(df["close"], 50))
+        pd.testing.assert_series_equal(ctx.ema100, ema(df["close"], 100))
+        pd.testing.assert_series_equal(ctx.ema200, ema(df["close"], 200))
+        pd.testing.assert_series_equal(ctx.ema300, ema(df["close"], 300))
+        pd.testing.assert_series_equal(ctx.volume_ma, df["volume"].rolling(50, min_periods=50).mean())
+        pd.testing.assert_series_equal(ctx.volume_filter, df["volume"] >= ctx.volume_ma)
+        pd.testing.assert_series_equal(ctx.range_, (df["high"] - df["low"]).replace(0, np.nan))
+        pd.testing.assert_series_equal(ctx.ibs, (df["close"] - df["low"]) / ctx.range_)
+
+    def test_build_signals_indicator_context_equivalence(self, df):
+        ctx = build_indicator_context(df)
+        for name in ALL_STRATEGIES:
+            params = VOL_SMALL_PARAMS if name == "VOL_EXPANSION_CONT" else None
+            direct = build_signals(df, "H1", strategy_params=params, strategies={name})
+            with_ctx = build_signals(df, "H1", strategy_params=params, strategies={name}, indicator_context=ctx)
+            assert len(direct) == len(with_ctx)
+            for old, new in zip(direct, with_ctx):
+                assert old[0] == new[0]
+                assert old[1] == new[1]
+                np.testing.assert_array_equal(old[2], new[2])
+                np.testing.assert_array_equal(old[3], new[3])
+                assert old[4] == new[4]
 
     def test_build_signals_vol_trend_auto(self, df):
         params = {"VOL_EXPANSION_CONT": {**VOL_SMALL_PARAMS["VOL_EXPANSION_CONT"], "trend": ["auto"]}}

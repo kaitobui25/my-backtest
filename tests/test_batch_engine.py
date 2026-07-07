@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from app.backtest.batch_engine import (
+    simulate_many_configs_normal_core_summary,
     simulate_many_configs_summary,
     simulate_many_configs_with_entries_summary,
 )
@@ -210,6 +211,39 @@ def _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, 
         "equity_max_drawdown": float(eq_mdd_a[0]) if not np.isnan(eq_mdd_a[0]) else float("nan"),
         "final_equity": float(fin_eq_a[0]) if not np.isnan(fin_eq_a[0]) else float("nan"),
         "liquidated_trades": int(liq_a[0]),
+    }
+
+
+def _batched_normal_core_result(open_, high, low, close, longs, shorts, configs, fee, test_start, index_ns, days, test_days):
+    sl_arr, tp_arr, mh_arr = configs
+    (
+        tr, wr, tre, pf, exp, mdd, aw, al,
+        tpd_a, mgd_a, abh_a,
+        ttr, twr, tre2, tpf, texp,
+        ttpd_a, tmgd_a, tabh_a,
+    ) = simulate_many_configs_normal_core_summary(
+        open_, high, low, close, longs, shorts, sl_arr, tp_arr, mh_arr, fee, test_start, index_ns, days, test_days
+    )
+    return {
+        "trades": tr[0],
+        "win_rate": wr[0],
+        "total_return": tre[0],
+        "profit_factor": pf[0],
+        "expectancy": exp[0],
+        "max_drawdown": mdd[0],
+        "avg_win": aw[0],
+        "avg_loss": al[0],
+        "trades_per_day": tpd_a[0],
+        "max_gap_days": mgd_a[0],
+        "avg_bars_held": abh_a[0],
+        "test_trades": ttr[0],
+        "test_win_rate": twr[0],
+        "test_total_return": tre2[0],
+        "test_profit_factor": tpf[0],
+        "test_expectancy": texp[0],
+        "test_trades_per_day": ttpd_a[0],
+        "test_max_gap_days": tmgd_a[0],
+        "test_avg_bars_held": tabh_a[0],
     }
 
 
@@ -610,6 +644,48 @@ def test_default_same_open_preserved():
     configs = build_config_grid([sl], [tp], [max_hold])
     new = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
     _assert_close(old, new, _DENSE_KEYS)
+
+
+@pytest.mark.parametrize("entries_fn", [_entries_long_only, _entries_all])
+@pytest.mark.parametrize("max_hold", [0, 10])
+def test_normal_core_matches_realistic_default(entries_fn, max_hold):
+    np.random.seed(42)
+    n = 200
+    open_, high, low, close = _synthetic_ohlc(n)
+    index_ns = _synthetic_index(n)
+    longs, shorts = entries_fn(n)
+    test_start_idx = 100
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    fee = 0.00035
+    configs = build_config_grid([0.04], [0.02], [max_hold])
+
+    realistic = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
+    core = _batched_normal_core_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
+    _assert_close(realistic, core, _DENSE_KEYS)
+
+
+def test_normal_core_forced_final_close_and_test_split():
+    n = 10
+    open_ = np.full(n, 100.0, dtype=np.float64)
+    high = np.full(n, 101.0, dtype=np.float64)
+    low = np.full(n, 99.0, dtype=np.float64)
+    close = np.arange(100.0, 110.0, dtype=np.float64)
+    longs = np.zeros(n, dtype=np.bool_)
+    longs[0] = True
+    shorts = np.zeros(n, dtype=np.bool_)
+    index_ns = _synthetic_index(n)
+    fee = 0.0
+    test_start_idx = 5
+    days = int((index_ns[-1] - index_ns[0]) // 86_400_000_000_000 + 1)
+    test_days = int((index_ns[-1] - index_ns[test_start_idx]) // 86_400_000_000_000 + 1)
+    configs = build_config_grid([0.5], [0.5], [0])
+
+    realistic = _batched_dense_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
+    core = _batched_normal_core_result(open_, high, low, close, longs, shorts, configs, fee, test_start_idx, index_ns, days, test_days)
+    _assert_close(realistic, core, _DENSE_KEYS)
+    assert core["trades"] == 1
+    assert core["test_trades"] == 1
 
 
 def test_final_bar_forced_exit_dense():

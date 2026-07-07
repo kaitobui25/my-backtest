@@ -33,3 +33,4 @@ class BacktestResponse(BaseModel):
     columns: list[str]
     rows: list[dict[str, Any]]
     timing: TimingInfo | None = None
+    diagnostics: dict[str, Any] | None = None

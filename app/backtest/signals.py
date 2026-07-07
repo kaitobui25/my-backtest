@@ -24,6 +24,74 @@ class SignalVariant:
     side_modes: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class IndicatorContext:
+    open: pd.Series
+    high: pd.Series
+    low: pd.Series
+    close: pd.Series
+    volume: pd.Series
+    atr14: pd.Series
+    atr100: pd.Series
+    adx14: pd.Series
+    rsi14: pd.Series
+    ema20: pd.Series
+    ema34: pd.Series
+    ema50: pd.Series
+    ema100: pd.Series
+    ema200: pd.Series
+    ema300: pd.Series
+    volume_ma: pd.Series
+    volume_filter: pd.Series
+    range_: pd.Series
+    ibs: pd.Series
+
+
+def build_indicator_context(df: pd.DataFrame) -> IndicatorContext:
+    close = df["close"]
+    open_ = df["open"]
+    high = df["high"]
+    low = df["low"]
+    volume = df["volume"]
+
+    atr14 = atr(df, 14)
+    atr100 = atr(df, 100)
+    adx14 = adx(df, 14)
+    rsi14 = rsi(close, 14)
+    ema20 = ema(close, 20)
+    ema34 = ema(close, 34)
+    ema50 = ema(close, 50)
+    ema100 = ema(close, 100)
+    ema200 = ema(close, 200)
+    ema300 = ema(close, 300)
+    vol_ma = volume.rolling(50, min_periods=50).mean()
+    vol_ok = volume >= vol_ma
+    rng = (high - low).replace(0, np.nan)
+    ibs = (close - low) / rng
+
+    return IndicatorContext(
+        open=open_,
+        high=high,
+        low=low,
+        close=close,
+        volume=volume,
+        atr14=atr14,
+        atr100=atr100,
+        adx14=adx14,
+        rsi14=rsi14,
+        ema20=ema20,
+        ema34=ema34,
+        ema50=ema50,
+        ema100=ema100,
+        ema200=ema200,
+        ema300=ema300,
+        volume_ma=vol_ma,
+        volume_filter=vol_ok,
+        range_=rng,
+        ibs=ibs,
+    )
+
+
 def shift_signal(signal: pd.Series) -> np.ndarray:
     return signal.shift(1).fillna(False).to_numpy(dtype=np.bool_)
 
@@ -83,27 +151,25 @@ def build_signals(
     timeframe: str,
     strategy_params: dict | None = None,
     strategies: set[str] | None = None,
+    indicator_context: IndicatorContext | None = None,
 ) -> list[Signal]:
-    close = df["close"]
-    open_ = df["open"]
-    high = df["high"]
-    low = df["low"]
-    volume = df["volume"]
+    ctx = indicator_context or build_indicator_context(df)
+    close = ctx.close
+    open_ = ctx.open
+    high = ctx.high
+    low = ctx.low
 
-    atr14 = atr(df, 14)
-    atr100 = atr(df, 100)
-    adx14 = adx(df, 14)
-    rsi14 = rsi(close, 14)
-    ema20 = ema(close, 20)
-    ema34 = ema(close, 34)
-    ema50 = ema(close, 50)
-    ema100 = ema(close, 100)
-    ema200 = ema(close, 200)
-    ema300 = ema(close, 300)
-    vol_ma = volume.rolling(50, min_periods=50).mean()
-    vol_ok = volume >= vol_ma
-    rng = (high - low).replace(0, np.nan)
-    ibs = (close - low) / rng
+    atr14 = ctx.atr14
+    adx14 = ctx.adx14
+    rsi14 = ctx.rsi14
+    ema20 = ctx.ema20
+    ema34 = ctx.ema34
+    ema50 = ctx.ema50
+    ema100 = ctx.ema100
+    ema200 = ctx.ema200
+    ema300 = ctx.ema300
+    vol_ok = ctx.volume_filter
+    ibs = ctx.ibs
     selected_strategies = set(strategies) if strategies is not None else None
 
     def wants(strategy_name: str) -> bool:
@@ -239,7 +305,7 @@ def build_signals(
     # ---- VOL_EXPANSION_CONT ----
     if wants("VOL_EXPANSION_CONT"):
         for params, long_entries, short_entries, side_modes in _iter_vol_expansion_signals(
-            df, strategy_params, ("long_only", "both")
+            df, strategy_params, ("long_only", "both"), indicator_context=ctx
         ):
             signals.append(("VOL_EXPANSION_CONT", params, long_entries, short_entries, side_modes))
 
@@ -251,11 +317,13 @@ def build_signals(
             period = int(period_str)
             for mult_str in sp["mult"]:
                 mult = float(mult_str)
+                trend = pd.Series(supertrend(df, period, mult), index=df.index)
+                base_long = (trend == 1) & (trend.shift(1) == -1)
+                base_short = (trend == -1) & (trend.shift(1) == 1)
                 for trend_name in sp_trend_names:
                     trend_ema = TREND_MAP.get(trend_name)
-                    trend = pd.Series(supertrend(df, period, mult), index=df.index)
-                    long_sig = (trend == 1) & (trend.shift(1) == -1)
-                    short_sig = (trend == -1) & (trend.shift(1) == 1)
+                    long_sig = base_long.copy()
+                    short_sig = base_short.copy()
                     if trend_ema is not None:
                         long_sig &= close > trend_ema
                         short_sig &= close < trend_ema
@@ -269,12 +337,14 @@ def build_signals(
         for preset_str in mc["preset"]:
             parts = [int(x) for x in preset_str.split("/")]
             fast, slow, sig_len = parts[0], parts[1], parts[2]
+            _, _, hist = macd(close, fast, slow, sig_len)
+            base_cross_long = (hist > 0) & (hist.shift(1) <= 0)
+            base_cross_short = (hist < 0) & (hist.shift(1) >= 0)
             for trend_name in mc_trend_names:
                 trend_ema = TREND_MAP.get(trend_name)
                 for adx_min in mc["adx_min"]:
-                    _, _, hist = macd(close, fast, slow, sig_len)
-                    long_sig = (hist > 0) & (hist.shift(1) <= 0) & (adx14 >= adx_min)
-                    short_sig = (hist < 0) & (hist.shift(1) >= 0) & (adx14 >= adx_min)
+                    long_sig = base_cross_long & (adx14 >= adx_min)
+                    short_sig = base_cross_short & (adx14 >= adx_min)
                     if trend_ema is not None:
                         long_sig &= close > trend_ema
                         short_sig &= close < trend_ema
@@ -287,13 +357,15 @@ def build_signals(
         for preset_str in wt["preset"]:
             ns = [int(x) for x in preset_str.split("/")]
             n1, n2 = ns[0], ns[1]
+            wt1, wt2 = wavetrend(df, n1, n2)
+            cross_long = (wt1 > wt2) & (wt1.shift(1) <= wt2.shift(1))
+            cross_short = (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
             for ob_os_str in wt["ob_os"]:
                 obs = [int(x) for x in ob_os_str.split("/")]
                 ob, os = obs[0], obs[1]
                 for trend_mode in wt["trend_mode"]:
-                    wt1, wt2 = wavetrend(df, n1, n2)
-                    long_sig = (wt1 < os) & (wt1 > wt2) & (wt1.shift(1) <= wt2.shift(1))
-                    short_sig = (wt1 > ob) & (wt1 < wt2) & (wt1.shift(1) >= wt2.shift(1))
+                    long_sig = (wt1 < os) & cross_long
+                    short_sig = (wt1 > ob) & cross_short
                     if trend_mode == "trend":
                         long_sig &= close > ema200
                         short_sig &= close < ema200
@@ -313,12 +385,14 @@ def build_signals(
                 bb_m = float(bb_m_str)
                 for kc_m_str in sq["kc_mult"]:
                     kc_m = float(kc_m_str)
+                    sqz_on, sqz_off, val = squeeze_momentum(df, length, bb_m, kc_m)
+                    squeeze_release = sqz_off & sqz_on.shift(1)
+                    base_long = squeeze_release & (val > 0) & (val > val.shift(1))
+                    base_short = squeeze_release & (val < 0) & (val < val.shift(1))
                     for trend_name in sq_trend_names:
                         trend_ema = TREND_MAP.get(trend_name)
-                        sqz_on, sqz_off, val = squeeze_momentum(df, length, bb_m, kc_m)
-                        squeeze_release = sqz_off & sqz_on.shift(1)
-                        long_sig = squeeze_release & (val > 0) & (val > val.shift(1))
-                        short_sig = squeeze_release & (val < 0) & (val < val.shift(1))
+                        long_sig = base_long.copy()
+                        short_sig = base_short.copy()
                         if trend_ema is not None:
                             long_sig &= close > trend_ema
                             short_sig &= close < trend_ema
@@ -334,9 +408,9 @@ def build_signals(
                 bbl = int(bbl_str)
                 for ph_str in wv["ph"]:
                     ph = float(ph_str)
+                    _, alert = williams_vix_fix(df, pd_len, bbl, 2.0, 50, ph)
                     for trend_mode in wv["trend_mode"]:
-                        _, alert = williams_vix_fix(df, pd_len, bbl, 2.0, 50, ph)
-                        long_sig = alert
+                        long_sig = alert.copy()
                         if trend_mode == "trend":
                             long_sig &= close > ema200
                         elif trend_mode == "range":
@@ -352,18 +426,36 @@ def _iter_vol_expansion_signals(
     df: pd.DataFrame,
     strategy_params: dict | None,
     side_modes: tuple[str, ...],
+    indicator_context: IndicatorContext | None = None,
 ):
-    close = df["close"]
-    open_ = df["open"]
-    high = df["high"]
-    low = df["low"]
+    if indicator_context is None:
+        close = df["close"]
+        open_ = df["open"]
+        high = df["high"]
+        low = df["low"]
 
-    adx14 = adx(df, 14)
-    ema100 = ema(close, 100)
-    ema200 = ema(close, 200)
-    ema20 = ema(close, 20)
-    ema50 = ema(close, 50)
-    ema300 = ema(close, 300)
+        adx14 = adx(df, 14)
+        ema100 = ema(close, 100)
+        ema200 = ema(close, 200)
+        ema20 = ema(close, 20)
+        ema50 = ema(close, 50)
+        ema300 = ema(close, 300)
+        rng = (high - low).replace(0, np.nan)
+        ibs = (close - low) / rng
+    else:
+        close = indicator_context.close
+        open_ = indicator_context.open
+        high = indicator_context.high
+        low = indicator_context.low
+
+        adx14 = indicator_context.adx14
+        ema100 = indicator_context.ema100
+        ema200 = indicator_context.ema200
+        ema20 = indicator_context.ema20
+        ema50 = indicator_context.ema50
+        ema300 = indicator_context.ema300
+        rng = indicator_context.range_
+        ibs = indicator_context.ibs
 
     TREND_MAP: dict[str, np.ndarray | None] = {
         "none": None,
@@ -381,8 +473,6 @@ def _iter_vol_expansion_signals(
         ema_arr = TREND_MAP.get(tn)
         vol_trend_map.append((tn, ema_arr))
 
-    rng = (high - low).replace(0, np.nan)
-    ibs = (close - low) / rng
     range_pct = (high - low) / close
     range_ma = range_pct.rolling(50, min_periods=50).median()
     body_ratio = (close - open_).abs() / rng
@@ -418,9 +508,10 @@ def _build_normal_variants(
     strategies: set[str] | None,
     strategy_params: dict | None = None,
 ) -> list[SignalVariant]:
+    ctx = build_indicator_context(df)
     return [
         SignalVariant(strategy, params, le, se, sm)
-        for strategy, params, le, se, sm in build_signals(df, timeframe, strategy_params, strategies)
+        for strategy, params, le, se, sm in build_signals(df, timeframe, strategy_params, strategies, indicator_context=ctx)
         if strategies is None or strategy in strategies
     ]
 
@@ -488,6 +579,7 @@ def iter_signal_variants(
     strategies: list[str] | set[str] | None = None,
     strategy_params: dict | None = None,
     max_signal_variants: int | None = None,
+    indicator_context: IndicatorContext | None = None,
 ):
     selected = set(strategies) if strategies is not None else None
     emitted = 0
@@ -503,11 +595,12 @@ def iter_signal_variants(
         return variant
 
     if mode == "normal":
+        ctx = indicator_context or build_indicator_context(df)
         for strategy_name in STRATEGY_PARAM_SCHEMAS:
             if not can_emit(strategy_name):
                 continue
             if strategy_name == "VOL_EXPANSION_CONT":
-                vol_iter = _iter_vol_expansion_signals(df, strategy_params, ("long_only", "both"))
+                vol_iter = _iter_vol_expansion_signals(df, strategy_params, ("long_only", "both"), indicator_context=ctx)
                 while max_signal_variants is None or emitted < max_signal_variants:
                     try:
                         params, le, se, sm = next(vol_iter)
@@ -518,7 +611,13 @@ def iter_signal_variants(
                         return
                     yield variant
                 continue
-            for strategy, params, le, se, sm in build_signals(df, timeframe, strategy_params, {strategy_name}):
+            for strategy, params, le, se, sm in build_signals(
+                df,
+                timeframe,
+                strategy_params,
+                {strategy_name},
+                indicator_context=ctx,
+            ):
                 variant = yield_variant(SignalVariant(strategy, params, le, se, sm))
                 if variant is None:
                     return

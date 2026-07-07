@@ -13,7 +13,7 @@ from fastapi.encoders import jsonable_encoder
 from app.api.routes_options import FILTER_FIELDS, INDICATORS, MODES, OPERATORS, TIMEFRAMES
 from app.api.schemas import BacktestRequest, BacktestResponse, ResultFilter, TimingInfo
 from app.backtest.config import SYMBOL, result_columns_for_params
-from app.backtest.runner import run_search_limited
+from app.backtest.runner import run_search_limited, run_search_limited_with_diagnostics
 
 
 router = APIRouter(prefix="/api", tags=["backtest"])
@@ -118,14 +118,25 @@ def run_backtest(request: BacktestRequest) -> BacktestResponse:
     started_at = datetime.now(timezone.utc)
     t0 = time.perf_counter()
 
-    df = run_search_limited(
-        timeframes=request.timeframes,
-        mode=request.mode,
-        strategies=request.strategies,
-        search_params=request.search_params,
-        result_filters=request.filters,
-        limit=request.limit,
-    )
+    diagnostics = None
+    if request.mode == "normal":
+        df, diagnostics = run_search_limited_with_diagnostics(
+            timeframes=request.timeframes,
+            mode=request.mode,
+            strategies=request.strategies,
+            search_params=request.search_params,
+            result_filters=request.filters,
+            limit=request.limit,
+        )
+    else:
+        df = run_search_limited(
+            timeframes=request.timeframes,
+            mode=request.mode,
+            strategies=request.strategies,
+            search_params=request.search_params,
+            result_filters=request.filters,
+            limit=request.limit,
+        )
 
     finished_at = datetime.now(timezone.utc)
     duration_sec = round(time.perf_counter() - t0, 4)
@@ -140,4 +151,5 @@ def run_backtest(request: BacktestRequest) -> BacktestResponse:
             finished_at=finished_at.isoformat(),
             duration_sec=duration_sec,
         ),
+        diagnostics=diagnostics,
     )
