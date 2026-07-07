@@ -31,6 +31,107 @@ def _compute_liquidation_rate(liquidated_trades: int, trades: int) -> float:
     return liquidated_trades / trades * 100.0
 
 
+def compute_stability_score(
+    neighbor_count: int,
+    neighbor_pass_count: int,
+    neighbor_avg_test_profit_factor: float,
+    neighbor_avg_test_win_rate: float,
+    neighbor_avg_max_drawdown: float,
+) -> float:
+    if neighbor_count <= 0:
+        return 0.0
+    pass_rate = neighbor_pass_count / neighbor_count
+    score = pass_rate * 100.0
+    if not np.isnan(neighbor_avg_test_profit_factor):
+        score += 12.0 * max(min(neighbor_avg_test_profit_factor, 2.5) - 1.0, 0.0)
+    if not np.isnan(neighbor_avg_test_win_rate):
+        score += 0.20 * max(neighbor_avg_test_win_rate - 50.0, 0.0)
+    if not np.isnan(neighbor_avg_max_drawdown):
+        score -= 0.35 * min(abs(neighbor_avg_max_drawdown), 80.0)
+    return float(max(0.0, min(score, 100.0)))
+
+
+def compute_robustness_fields(row: dict[str, Any]) -> dict[str, Any]:
+    pf = float(row.get("profit_factor", np.nan))
+    test_pf = float(row.get("test_profit_factor", np.nan))
+    wr = float(row.get("win_rate", np.nan))
+    test_wr = float(row.get("test_win_rate", np.nan))
+    trades = int(row.get("trades", 0))
+    test_trades = int(row.get("test_trades", 0))
+    max_gap = float(row.get("max_gap_days", np.nan))
+    test_gap = float(row.get("test_max_gap_days", np.nan))
+    total_return = float(row.get("total_return", np.nan))
+    max_drawdown = float(row.get("max_drawdown", np.nan))
+    stability = float(row.get("stability_score", 0.0) or 0.0)
+    neighbor_count = int(row.get("neighbor_count", 0) or 0)
+
+    pf_gap = abs(pf - test_pf) if np.isfinite(pf) and np.isfinite(test_pf) else float("nan")
+    wr_gap = abs(wr - test_wr) if np.isfinite(wr) and np.isfinite(test_wr) else float("nan")
+    flags: list[str] = []
+    risk = 0.0
+
+    if trades < 30:
+        flags.append("low_full_trades")
+        risk += 15.0
+    if test_trades < 10:
+        flags.append("low_test_trades")
+        risk += 20.0
+    if (np.isfinite(max_gap) and max_gap > 21.0) or (np.isfinite(test_gap) and test_gap > 21.0):
+        flags.append("high_max_gap")
+        risk += 15.0
+    if neighbor_count > 0 and stability < 45.0:
+        flags.append("unstable_neighbors")
+        risk += 25.0
+    if np.isfinite(pf_gap) and pf_gap > 1.0:
+        flags.append("large_full_test_pf_gap")
+        risk += min(pf_gap * 12.0, 25.0)
+    if np.isfinite(wr_gap) and wr_gap > 20.0:
+        flags.append("large_full_test_winrate_gap")
+        risk += min(wr_gap * 0.8, 20.0)
+    if np.isfinite(total_return) and np.isfinite(max_drawdown) and total_return > 100.0 and abs(max_drawdown) > 35.0:
+        flags.append("high_return_bad_drawdown")
+        risk += 15.0
+    if np.isfinite(test_wr) and np.isfinite(test_pf) and test_wr >= 70.0 and test_pf < 1.4:
+        flags.append("high_winrate_low_pf")
+        risk += 15.0
+    if np.isfinite(pf) and np.isfinite(test_pf) and test_pf + 0.5 < pf:
+        flags.append("test_weaker_than_full")
+        risk += 15.0
+
+    return {
+        "robustness_flags": ",".join(flags),
+        "full_test_pf_gap": pf_gap,
+        "full_test_winrate_gap": wr_gap,
+        "overfit_risk_score": float(min(risk, 100.0)),
+    }
+
+
+def update_normal_score(row: dict[str, Any]) -> None:
+    robustness = compute_robustness_fields(row)
+    row.update(robustness)
+    row["score"] = score_candidate(
+        float(row["win_rate"]),
+        float(row["total_return"]),
+        float(row["profit_factor"]),
+        float(row["expectancy"]),
+        float(row["max_drawdown"]),
+        int(row["trades"]),
+        float(row["test_win_rate"]),
+        float(row["test_total_return"]),
+        float(row["test_profit_factor"]),
+        float(row["test_expectancy"]),
+        test_trades=int(row["test_trades"]),
+        trades_per_day=float(row["trades_per_day"]),
+        max_gap_days=float(row["max_gap_days"]),
+        test_trades_per_day=float(row["test_trades_per_day"]),
+        test_max_gap_days=float(row["test_max_gap_days"]),
+        stability_score=float(row.get("stability_score", 0.0) or 0.0),
+        full_test_pf_gap=float(row.get("full_test_pf_gap", 0.0) or 0.0),
+        full_test_winrate_gap=float(row.get("full_test_winrate_gap", 0.0) or 0.0),
+        overfit_risk_score=float(row.get("overfit_risk_score", 0.0) or 0.0),
+    )
+
+
 def batch_to_normal_rows(
     sl_arr: np.ndarray,
     tp_arr: np.ndarray,
@@ -103,7 +204,6 @@ def batch_to_normal_rows(
         mdd = max_drawdown_arr[c]
         aw = avg_win_arr[c]
         al = avg_loss_arr[c]
-        score = score_candidate(wr, total_ret, pf, exp, mdd, trades, test_wr, test_ret, test_pf, test_exp)
         sl_val = float(sl_arr[c])
         tp_val = float(tp_arr[c])
         ambiguous_trades = int(ambiguous_trades_arr[c])
@@ -139,8 +239,17 @@ def batch_to_normal_rows(
             "test_trades_per_day": float(test_trades_per_day_arr[c]),
             "test_max_gap_days": float(test_max_gap_days_arr[c]),
             "test_avg_bars_held": float(test_avg_bars_held_arr[c]),
-            "score": score,
+            "stability_score": 0.0,
+            "neighbor_count": 0,
+            "neighbor_pass_count": 0,
+            "neighbor_pass_rate": 0.0,
+            "neighbor_avg_profit_factor": float("nan"),
+            "neighbor_avg_test_profit_factor": float("nan"),
+            "neighbor_avg_test_win_rate": float("nan"),
+            "neighbor_avg_max_drawdown": float("nan"),
+            "score": 0.0,
         }
+        update_normal_score(row)
         if include_rr_metrics:
             row["rr"] = _compute_rr(tp_val, sl_val)
             row["realized_rr"] = _compute_realized_rr(aw, al)

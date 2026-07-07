@@ -5,7 +5,7 @@ Cong cu backtest noi bo cho chien luoc giao dich BTCUSD. Du an gom backend FastA
 ## Tinh nang chinh
 
 - Chay backtest cho `BTCUSD` tren cac timeframe `M15`, `M30`, `H1`, `H2`, `H4`, `D1`.
-- Ho tro 2 che do search: `normal` va `dense_high_winrate`.
+- Che do user-facing la `normal`; backend van giu cac duong tham chieu cu cho kiem thu/noi bo.
 - Loc ket qua theo cac cot nhu `win_rate`, `profit_factor`, `test_total_return`, `score`, ...
 - Luu ket qua vao `data/saved_runs/`, tai lai run da luu va xuat CSV.
 - Frontend chay bang HTML/CSS/JavaScript thuan, goi backend qua API.
@@ -106,6 +106,10 @@ pytest
 ```
 
 Luu y: mot so test/API backtest can du lieu parquet hop le trong `flect_mt5/cache/btc/` hoac `my-data/flect_mt5/cache/btc/`.
+
+### Normal search space
+
+Normal defaults duoc can bang lai de tranh grid qua day. So signal variants mac dinh giam tu `12528` xuong `602`; tat ca strategy families van duoc giu.
 
 ### Batch engine benchmark
 

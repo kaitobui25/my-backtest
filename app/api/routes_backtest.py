@@ -10,7 +10,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 from fastapi.encoders import jsonable_encoder
 
-from app.api.routes_options import FILTER_FIELDS, INDICATORS, MODES, OPERATORS, TIMEFRAMES
+from app.api.routes_options import BACKTEST_MODES, FILTER_FIELDS, INDICATORS, OPERATORS, TIMEFRAMES
 from app.api.schemas import BacktestRequest, BacktestResponse, ResultFilter, TimingInfo
 from app.backtest.config import SYMBOL, result_columns_for_params
 from app.backtest.runner import run_search_limited, run_search_limited_with_diagnostics
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api", tags=["backtest"])
 def validate_request(request: BacktestRequest) -> None:
     if request.symbol != SYMBOL:
         raise HTTPException(status_code=400, detail=f"Unsupported symbol: {request.symbol}")
-    if request.mode not in MODES:
+    if request.mode not in BACKTEST_MODES:
         raise HTTPException(status_code=400, detail=f"Unsupported mode: {request.mode}")
 
     invalid_timeframes = [timeframe for timeframe in request.timeframes if timeframe not in TIMEFRAMES]
@@ -42,7 +42,9 @@ def validate_request(request: BacktestRequest) -> None:
     if invalid_filters:
         raise HTTPException(status_code=400, detail=f"Invalid filters: {invalid_filters}")
 
-    enabled_fields = set(result_columns_for_params(request.search_params))
+    enabled_params = dict(request.search_params or {})
+    enabled_params["_mode"] = request.mode
+    enabled_fields = set(result_columns_for_params(enabled_params))
     disabled_filters = [
         item.field
         for item in request.filters

@@ -203,17 +203,12 @@ function formatCsvValue(v) {
 function getProfileDefaults(profile) {
   const schema = state.gridParamSchema;
   const pd = schema && schema[profile];
-  const DENSE_FALLBACK = {
-    sl_values: [0.02, 0.03, 0.04, 0.06, 0.08],
-    tp_values: [0.005, 0.0075, 0.01, 0.015, 0.02, 0.03],
-    max_holds: [16, 32, 64, 96],
-  };
   const NORMAL_FALLBACK = {
     sl_values: [0.01, 0.02, 0.04, 0.06],
     tp_values: [0.005, 0.01, 0.02, 0.03],
     max_holds: [48, 96, 0],
   };
-  const fb = profile === "dense" ? DENSE_FALLBACK : NORMAL_FALLBACK;
+  const fb = NORMAL_FALLBACK;
   return {
     sl_values: pd?.sl_values || fb.sl_values,
     tp_values: pd?.tp_values || fb.tp_values,
@@ -333,13 +328,13 @@ function renderSearchGrid() {
   const locked = isConfigLocked();
   const gs = state.gridSettings;
   const ds = state.densitySettings;
+  if (gs.profile !== "normal") gs.profile = "normal";
   const trackable = hasTrackableResult();
   const dirty = (key) => trackable && isConfigKeyChanged(key) ? " config-dirty" : "";
   el.innerHTML = `
     <div class="grid-row${dirty("gridProfile")}">
       <label>Profile</label>
       <select id="grid-profile" ${locked ? "disabled" : ""}>
-        <option value="dense" ${gs.profile === "dense" ? "selected" : ""}>Dense</option>
         <option value="normal" ${gs.profile === "normal" ? "selected" : ""}>Normal</option>
       </select>
     </div>

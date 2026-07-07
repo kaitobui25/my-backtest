@@ -3,8 +3,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from math import prod
 
-from app.backtest.strategy_params import STRATEGY_PARAM_SCHEMAS, get_default_params
+from app.backtest.strategy_params import NORMAL_DEFAULT_SEARCH_SPACE_COUNTS, STRATEGY_PARAM_SCHEMAS, get_default_params
 from app.backtest.indicators import adx, atr, ema, rsi
 from app.backtest.signals import (
     _expand_range,
@@ -89,6 +90,19 @@ def test_params_for_select_preserves():
     user = {"VOL_EXPANSION_CONT": {"trend": ["none", "ema200"]}}
     p = _params_for("VOL_EXPANSION_CONT", user)
     assert p["trend"] == ["none", "ema200"]
+
+
+def test_normal_default_search_space_is_balanced():
+    counts = {}
+    for name in ALL_STRATEGIES:
+        params = _params_for(name, None)
+        counts[name] = prod(len(values) for values in params.values())
+
+    assert all(counts[name] > 0 for name in ALL_STRATEGIES)
+    assert counts["VOL_EXPANSION_CONT"] == 360
+    assert sum(counts.values()) == NORMAL_DEFAULT_SEARCH_SPACE_COUNTS["new_signal_variants"]
+    assert NORMAL_DEFAULT_SEARCH_SPACE_COUNTS["old_signal_variants"] == 12528
+    assert NORMAL_DEFAULT_SEARCH_SPACE_COUNTS["new_signal_variants"] < NORMAL_DEFAULT_SEARCH_SPACE_COUNTS["old_signal_variants"] / 10
 
 
 def test_expand_range_two_values():

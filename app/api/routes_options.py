@@ -7,15 +7,18 @@ from app.backtest.config import (
     CORE_COLUMNS,
     EQUITY_COLUMNS,
     LIQUIDATION_COLUMNS,
+    ROBUSTNESS_COLUMNS,
     RR_COLUMNS,
+    STABILITY_COLUMNS,
 )
-from app.backtest.strategy_params import GRID_PARAM_SCHEMA, STRATEGY_PARAM_SCHEMAS
+from app.backtest.strategy_params import GRID_PARAM_SCHEMA, NORMAL_DEFAULT_SEARCH_SPACE_COUNTS, STRATEGY_PARAM_SCHEMAS
 
 
 router = APIRouter(prefix="/api", tags=["options"])
 
 TIMEFRAMES = ["M15", "M30", "H1", "H2", "H4", "D1"]
-MODES = ["normal", "dense_high_winrate"]
+MODES = ["normal"]
+BACKTEST_MODES = ["normal", "dense_high_winrate"]
 INDICATORS = [
     "EMA_PULLBACK",
     "DONCHIAN_BREAKOUT",
@@ -34,6 +37,8 @@ FILTER_FIELD_GROUPS = {
     "ambiguity": AMBIGUITY_COLUMNS,
     "equity": EQUITY_COLUMNS,
     "liquidation": LIQUIDATION_COLUMNS,
+    "stability": STABILITY_COLUMNS,
+    "robustness": ROBUSTNESS_COLUMNS,
 }
 FILTER_FIELDS = [
     *CORE_COLUMNS[:-1],
@@ -41,6 +46,8 @@ FILTER_FIELDS = [
     *AMBIGUITY_COLUMNS,
     *EQUITY_COLUMNS,
     *LIQUIDATION_COLUMNS,
+    *STABILITY_COLUMNS,
+    *ROBUSTNESS_COLUMNS,
     *CORE_COLUMNS[-1:],
 ]
 OPERATORS = [">", ">=", "<", "<=", "=", "~"]
@@ -63,4 +70,5 @@ def options() -> dict:
         "operators": OPERATORS,
         "strategy_param_schemas": STRATEGY_PARAM_SCHEMAS,
         "grid_param_schema": GRID_PARAM_SCHEMA,
+        "normal_default_search_space_counts": NORMAL_DEFAULT_SEARCH_SPACE_COUNTS,
     }

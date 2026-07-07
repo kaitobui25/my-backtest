@@ -6,14 +6,14 @@ STRATEGY_PARAM_SCHEMAS: dict[str, dict] = {
         "trend": {"type": "select", "default": ["ema200"], "options": ["none", "ema200"]},
         "rsi_lo": {"type": "range", "default": [40, 45], "min": 20, "max": 50, "step": 5},
         "rsi_hi": {"type": "range", "default": [55, 60], "min": 50, "max": 80, "step": 5},
-        "adx_min": {"type": "range", "default": [12, 18], "min": 5, "max": 40, "step": 1},
-        "atr_mult": {"type": "range", "default": [0.60, 0.90], "min": 0.1, "max": 2.0, "step": 0.05},
+        "adx_min": {"type": "range", "default": [12, 18], "min": 5, "max": 40, "step": 3},
+        "atr_mult": {"type": "range", "default": [0.60, 0.90], "min": 0.1, "max": 2.0, "step": 0.15},
         "use_vol": {"type": "select", "default": ["false"], "options": ["true", "false"]},
     },
     "DONCHIAN_BREAKOUT": {
         "window": {"type": "select", "default": ["40", "80"], "options": ["40", "80"]},
         "trend": {"type": "select", "default": ["ema200"], "options": ["none", "ema200"]},
-        "adx_min": {"type": "range", "default": [18, 24], "min": 5, "max": 40, "step": 1},
+        "adx_min": {"type": "range", "default": [18, 24], "min": 5, "max": 40, "step": 3},
         "use_vol": {"type": "select", "default": ["false"], "options": ["true", "false"]},
     },
     "BB_RSI_REVERT": {
@@ -31,11 +31,11 @@ STRATEGY_PARAM_SCHEMAS: dict[str, dict] = {
         "adx_max": {"type": "select", "default": ["none", "24"], "options": ["none", "24"]},
     },
     "VOL_EXPANSION_CONT": {
-        "range_mult": {"type": "range", "default": [0.8, 2.0], "min": 0.5, "max": 3.0, "step": 0.1},
+        "range_mult": {"type": "range", "default": [0.8, 2.0], "min": 0.5, "max": 3.0, "step": 0.4},
         "trend": {"type": "select", "default": ["none", "ema100", "ema200"], "options": ["auto", "none", "ema20", "ema50", "ema100", "ema200", "ema300"]},
-        "adx_min": {"type": "range", "default": [8, 24], "min": 5, "max": 40, "step": 1},
-        "close_extreme": {"type": "range", "default": [0.60, 0.85], "min": 0.5, "max": 1.0, "step": 0.05},
-        "body_min": {"type": "range", "default": [0.45, 0.55], "min": 0.3, "max": 0.7, "step": 0.05},
+        "adx_min": {"type": "range", "default": [8, 24], "min": 5, "max": 40, "step": 4},
+        "close_extreme": {"type": "range", "default": [0.60, 0.80], "min": 0.5, "max": 1.0, "step": 0.10},
+        "body_min": {"type": "range", "default": [0.45, 0.55], "min": 0.3, "max": 0.7, "step": 0.10},
     },
     "SUPERTREND": {
         "period": {"type": "select", "default": ["10", "14", "20"], "options": ["10", "14", "20"]},
@@ -45,7 +45,7 @@ STRATEGY_PARAM_SCHEMAS: dict[str, dict] = {
     "MACD_CROSS": {
         "preset": {"type": "select", "default": ["8/21/5", "12/26/9", "5/34/5"], "options": ["8/21/5", "12/26/9", "5/34/5"]},
         "trend": {"type": "select", "default": ["none", "ema200"], "options": ["none", "ema200"]},
-        "adx_min": {"type": "range", "default": [12, 18], "min": 5, "max": 40, "step": 1},
+        "adx_min": {"type": "range", "default": [12, 18], "min": 5, "max": 40, "step": 3},
     },
     "WAVETREND": {
         "preset": {"type": "select", "default": ["10/21", "10/11", "14/21"], "options": ["10/21", "10/11", "14/21"]},
@@ -64,6 +64,11 @@ STRATEGY_PARAM_SCHEMAS: dict[str, dict] = {
         "ph": {"type": "select", "default": ["0.85", "0.90"], "options": ["0.85", "0.90"]},
         "trend_mode": {"type": "select", "default": ["trend", "range"], "options": ["trend", "counter", "range"]},
     },
+}
+
+NORMAL_DEFAULT_SEARCH_SPACE_COUNTS = {
+    "old_signal_variants": 12528,
+    "new_signal_variants": 602,
 }
 
 GRID_PARAM_SCHEMA: dict[str, dict] = {

@@ -66,6 +66,24 @@ CORE_COLUMNS = [
     "score",
 ]
 
+STABILITY_COLUMNS = [
+    "stability_score",
+    "neighbor_count",
+    "neighbor_pass_count",
+    "neighbor_pass_rate",
+    "neighbor_avg_profit_factor",
+    "neighbor_avg_test_profit_factor",
+    "neighbor_avg_test_win_rate",
+    "neighbor_avg_max_drawdown",
+]
+
+ROBUSTNESS_COLUMNS = [
+    "robustness_flags",
+    "full_test_pf_gap",
+    "full_test_winrate_gap",
+    "overfit_risk_score",
+]
+
 RR_COLUMNS = [
     "rr",
     "realized_rr",
@@ -99,6 +117,7 @@ REQUIRED_COLUMNS = [
 
 def result_columns_for_params(search_params: dict | None = None) -> list[str]:
     search_params = search_params or {}
+    mode = search_params.get("_mode")
     columns = list(CORE_COLUMNS)
     insert_at = columns.index("score")
     optional: list[str] = []
@@ -114,6 +133,9 @@ def result_columns_for_params(search_params: dict | None = None) -> list[str]:
         optional.extend(EQUITY_COLUMNS)
     if search_params.get("use_liquidation", False):
         optional.extend(LIQUIDATION_COLUMNS)
+    if mode == "normal" and search_params.get("include_robustness_metrics", True):
+        optional.extend(STABILITY_COLUMNS)
+        optional.extend(ROBUSTNESS_COLUMNS)
     return columns[:insert_at] + optional + columns[insert_at:]
 
 
