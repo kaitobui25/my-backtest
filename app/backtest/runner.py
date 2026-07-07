@@ -17,6 +17,8 @@ from app.backtest.config import (
     DENSE_TIMEFRAMES,
     FEE_PER_SIDE,
     NORMAL_TIMEFRAMES,
+    ROBUSTNESS_COLUMNS,
+    STABILITY_COLUMNS,
     TEST_START,
     dense_grid_for_timeframe,
     normal_grid_for_timeframe,
@@ -52,6 +54,10 @@ class SearchDiagnostics:
     verification_sec: float = 0.0
     stability_sec: float = 0.0
     ranking_sec: float = 0.0
+    rows_before_pre_filter: int = 0
+    rows_after_pre_filter: int = 0
+    rows_before_post_filter: int = 0
+    rows_after_post_filter: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -76,6 +82,10 @@ class SearchDiagnostics:
             "verification_sec": round(self.verification_sec, 4),
             "stability_sec": round(self.stability_sec, 4),
             "ranking_sec": round(self.ranking_sec, 4),
+            "rows_before_pre_filter": self.rows_before_pre_filter,
+            "rows_after_pre_filter": self.rows_after_pre_filter,
+            "rows_before_post_filter": self.rows_before_post_filter,
+            "rows_after_post_filter": self.rows_after_post_filter,
         }
 
 
@@ -185,6 +195,26 @@ def _row_matches_filter(row: dict[str, Any], item: Any) -> bool:
 
 def _row_matches_filters(row: dict[str, Any], filters: list[Any] | tuple[Any, ...] | None) -> bool:
     return all(_row_matches_filter(row, item) for item in (filters or []))
+
+
+_NORMAL_POST_FILTER_FIELDS = {
+    "score",
+    *STABILITY_COLUMNS,
+    *ROBUSTNESS_COLUMNS,
+}
+
+
+def _split_normal_filters(
+    filters: list[Any] | tuple[Any, ...] | None,
+) -> tuple[list[Any], list[Any]]:
+    pre_filters: list[Any] = []
+    post_filters: list[Any] = []
+    for item in filters or []:
+        if _item_value(item, "field") in _NORMAL_POST_FILTER_FIELDS:
+            post_filters.append(item)
+        else:
+            pre_filters.append(item)
+    return pre_filters, post_filters
 
 
 def _exact_filter_values(filters: list[Any] | tuple[Any, ...] | None, field: str) -> set[str] | None:
@@ -886,12 +916,20 @@ def run_search_limited(
     columns = result_columns_for_params(_params_with_mode(search_params, mode))
     rows: list[dict[str, Any]] = []
     trim_threshold = max(limit * 2, limit + 100)
+    if mode == "normal":
+        pre_filters, post_filters = _split_normal_filters(result_filters)
+    else:
+        pre_filters = list(result_filters or [])
+        post_filters = []
     for timeframe in timeframes:
-        for row in _iter_timeframe_rows(timeframe, mode, strategies, search_params, result_filters, diagnostics):
+        for row in _iter_timeframe_rows(timeframe, mode, strategies, search_params, pre_filters, diagnostics):
             if diagnostics is not None and mode == "normal":
                 diagnostics.normal_candidates_scanned += 1
-            if not _row_matches_filters(row, result_filters):
+                diagnostics.rows_before_pre_filter += 1
+            if not _row_matches_filters(row, pre_filters):
                 continue
+            if diagnostics is not None and mode == "normal":
+                diagnostics.rows_after_pre_filter += 1
             rows.append(row)
             if mode != "normal" and len(rows) > trim_threshold:
                 rows = _trim_rows(rows, mode, limit, columns)
@@ -906,6 +944,12 @@ def run_search_limited(
             update_normal_score(row)
         if diagnostics is not None:
             diagnostics.ranking_sec += time.perf_counter() - ranking_t0
+    if mode == "normal":
+        if diagnostics is not None:
+            diagnostics.rows_before_post_filter = len(rows)
+        rows = [row for row in rows if _row_matches_filters(row, post_filters)]
+        if diagnostics is not None:
+            diagnostics.rows_after_post_filter = len(rows)
 
     row_t0 = time.perf_counter()
     df = _result_frame(rows, _sort_cols_for_mode(mode), columns)

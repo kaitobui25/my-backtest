@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -131,6 +132,10 @@ def test_limited_runner_diagnostics_are_separate():
         "verification_sec",
         "stability_sec",
         "ranking_sec",
+        "rows_before_pre_filter",
+        "rows_after_pre_filter",
+        "rows_before_post_filter",
+        "rows_after_post_filter",
     }
     assert set(diagnostics) == expected_keys
     assert diagnostics["kernel_used"] == "normal_core"
@@ -138,9 +143,99 @@ def test_limited_runner_diagnostics_are_separate():
     assert diagnostics["rows_kept"] == len(df)
     assert diagnostics["top_candidates_selected"] >= diagnostics["verified_candidates"]
     assert diagnostics["stability_neighbors_simulated"] >= diagnostics["stability_candidates_checked"]
+    assert diagnostics["rows_before_pre_filter"] >= diagnostics["rows_after_pre_filter"]
+    assert diagnostics["rows_before_post_filter"] >= diagnostics["rows_after_post_filter"]
     assert "load_data_sec" not in df.columns
     for col in [*STABILITY_COLUMNS, *ROBUSTNESS_COLUMNS]:
         assert col in df.columns
+
+
+def _post_filter_params():
+    return {
+        "max_signal_variants": 1,
+        "grid_profile": "normal",
+        "verify_top_n": 10,
+        "stability_top_n": 10,
+        "strategy_params": {
+            "VOL_EXPANSION_CONT": {
+                "range_mult": [0.8],
+                "trend": ["none"],
+                "adx_min": [8],
+                "close_extreme": [0.6],
+                "body_min": [0.45],
+            }
+        },
+    }
+
+
+def test_normal_post_filters_apply_after_enrichment():
+    params = _post_filter_params()
+    base = run_search_limited(
+        ["M15"],
+        "normal",
+        ["VOL_EXPANSION_CONT"],
+        params,
+        result_filters=[{"field": "win_rate", "op": ">=", "value": 0}],
+        limit=20,
+    )
+    assert not base.empty
+
+    score_threshold = float(base["score"].max()) - 0.001
+    stability_threshold = float(base["stability_score"].max()) - 0.001
+    overfit_threshold = float(base["overfit_risk_score"].min())
+
+    by_score = run_search_limited(
+        ["M15"],
+        "normal",
+        ["VOL_EXPANSION_CONT"],
+        params,
+        result_filters=[{"field": "score", "op": ">=", "value": score_threshold}],
+        limit=20,
+    )
+    assert not by_score.empty
+    assert (by_score["score"] >= score_threshold).all()
+
+    by_stability = run_search_limited(
+        ["M15"],
+        "normal",
+        ["VOL_EXPANSION_CONT"],
+        params,
+        result_filters=[{"field": "stability_score", "op": ">=", "value": stability_threshold}],
+        limit=20,
+    )
+    assert not by_stability.empty
+    assert (by_stability["stability_score"] >= stability_threshold).all()
+
+    by_overfit = run_search_limited(
+        ["M15"],
+        "normal",
+        ["VOL_EXPANSION_CONT"],
+        params,
+        result_filters=[{"field": "overfit_risk_score", "op": "<=", "value": overfit_threshold}],
+        limit=20,
+    )
+    assert not by_overfit.empty
+    assert (by_overfit["overfit_risk_score"] <= overfit_threshold).all()
+
+
+def test_existing_core_filters_still_apply_before_enrichment():
+    params = _post_filter_params()
+    rows = run_search_limited(
+        ["M15"],
+        "normal",
+        ["VOL_EXPANSION_CONT"],
+        params,
+        result_filters=[{"field": "win_rate", "op": ">=", "value": 50}],
+        limit=20,
+    )
+    assert not rows.empty
+    assert (rows["win_rate"] >= 50).all()
+
+
+def test_frontend_enabled_filter_fields_include_stability_and_robustness():
+    source = Path("frontend/src/main.js").read_text(encoding="utf-8")
+    assert "groups.stability" in source
+    assert "groups.robustness" in source
 
 
 def test_stability_neighbor_generation():

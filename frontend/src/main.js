@@ -191,6 +191,8 @@ function getEnabledFilterFields() {
     fields.push(...(groups.equity || []));
   }
   if (state.riskSettings.use_liquidation) fields.push(...(groups.liquidation || []));
+  fields.push(...(groups.stability || []));
+  fields.push(...(groups.robustness || []));
   return fields.filter((field, idx) => fields.indexOf(field) === idx);
 }
 
